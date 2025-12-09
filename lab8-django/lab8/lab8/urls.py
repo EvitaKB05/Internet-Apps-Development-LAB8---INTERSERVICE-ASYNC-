@@ -1,22 +1,29 @@
 """
 URL configuration for lab8 project.
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/4.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+Лабораторная работа №8 - URL маршруты асинхронного сервиса
+URL - это адреса, по которым можно обращаться к нашему сервису
 """
+
 from django.contrib import admin
 from django.urls import path
+from app import views  # импортируем наши обработчики
 
 urlpatterns = [
+    # Админка Django (не используем, но оставляем)
     path('admin/', admin.site.urls),
+    
+    # ==================== НАШИ API ЭНДПОИНТЫ ====================
+    
+    # Основной эндпоинт для асинхронного расчета
+    # POST запрос сюда запускает расчет ДЖЕЛ
+    path('api/async-calculate/', views.async_calculate_djel, name='async-calculate'),
+    
+    # Проверка здоровья сервиса
+    # GET запрос - просто проверяем что сервис работает
+    path('api/health/', views.health_check, name='health-check'),
+    
+    # Корневой маршрут
+    # Просто информационная страница
+    path('', views.home, name='home'),
 ]
