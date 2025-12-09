@@ -45,3 +45,40 @@ export interface CartIconResponse {
 	med_item_count: number
 }
 // КОНЕЦ НОВЫХ ДОБАВЛЕНИЙ
+// ==================== ДОБАВЛЯЕМ НОВЫЙ ТИП ====================
+// Для заявки с асинхронными полями
+export interface PvlcMedCard {
+	id: number
+	status: string
+	created_at: string
+	updated_at: string
+	patient_name: string
+	doctor_name: string
+	finalized_at?: string
+	completed_at?: string
+	total_result: number
+	med_calculations: MedCalculation[]
+
+	// ==================== НОВЫЕ ПОЛЯ ====================
+	// Для отображения прогресса асинхронных вычислений
+	calculated_count: number // сколько формул уже рассчитано
+	async_calculated: boolean // true если расчет завершен
+	calculation_progress?: number // прогресс в процентах (0-100)
+}
+
+export interface MedCalculation {
+	pvlc_med_formula_id: number
+	title: string
+	description: string
+	formula: string
+	image_url: string
+	input_height: number
+	final_result: number
+}
+
+// ==================== ДОБАВЛЯЕМ НОВЫЙ ТИП ====================
+// Для фильтрации по создателю (только на фронтенде)
+export interface FrontendFilter {
+	creator_login?: string // фильтр по логину создателя
+	show_only_mine?: boolean // показывать только мои заявки
+}

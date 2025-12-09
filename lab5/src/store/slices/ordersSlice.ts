@@ -1,4 +1,3 @@
-// src/store/slices/ordersSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import {
@@ -6,6 +5,8 @@ import {
 	type DsPvlcMedCardResponse,
 	type DsUpdatePvlcMedCardRequest,
 	type DsUpdateMedMmPvlcCalculationAPIRequest,
+	// ДОБАВЛЯЕМ ИМПОРТ ТИПА ДЛЯ ЗАВЕРШЕНИЯ ЗАЯВКИ
+	type DsCompletePvlcMedCardRequest,
 } from '../../api'
 // ИСПРАВЛЕНО: добавляем импорт типа для фильтра
 import type { PvlcMedCardFilter } from '../../types'
@@ -87,6 +88,47 @@ export const getOrdersList = createAsyncThunk(
 				typeof apiError.response?.data === 'string'
 					? apiError.response.data
 					: 'Ошибка загрузки заявок'
+			)
+		}
+	}
+)
+
+// ==================== ДОБАВЛЯЕМ НОВЫЙ ACTION ДЛЯ ЛР8 ====================
+// Асинхронное действие для завершения/отклонения заявки модератором
+const completeOrder = createAsyncThunk(
+	// ИСПРАВЛЕНО: убираем export здесь
+	'orders/completeOrder',
+	async (
+		{ id, action }: { id: number; action: 'complete' | 'reject' },
+		{ rejectWithValue, dispatch }
+	) => {
+		try {
+			console.log(`🚀 [ЛР8] Завершение заявки #${id} с действием: ${action}`)
+
+			const requestData: DsCompletePvlcMedCardRequest = {
+				action: action,
+			}
+
+			const response = await api.api.pvlcMedCardsCompleteUpdate(
+				{ id },
+				requestData
+			)
+
+			console.log('✅ [ЛР8] Ответ от сервера при завершении:', response)
+
+			// После успешного завершения обновляем список заявок
+			dispatch(getOrdersList({}))
+
+			return { id, action, response }
+		} catch (error: unknown) {
+			const apiError = error as ApiError
+			console.error('❌ [ЛР8] Ошибка завершения заявки:', apiError)
+			return rejectWithValue(
+				typeof apiError.response?.data === 'string'
+					? apiError.response.data
+					: `Ошибка ${
+							action === 'complete' ? 'завершения' : 'отклонения'
+					  } заявки`
 			)
 		}
 	}
@@ -242,6 +284,46 @@ const ordersSlice = createSlice({
 	},
 	extraReducers: builder => {
 		builder
+			// ==================== ОБРАБОТКА НОВОГО ACTION ДЛЯ ЛР8 ====================
+			.addCase(completeOrder.pending, state => {
+				state.loading = true
+				state.error = null
+			})
+			.addCase(completeOrder.fulfilled, (state, action) => {
+				state.loading = false
+
+				// Обновляем заявку в списке
+				const index = state.orders.findIndex(
+					order => order.id === action.payload.id
+				)
+				if (index !== -1) {
+					const newStatus =
+						action.payload.action === 'complete' ? 'завершен' : 'отклонен'
+					state.orders[index] = {
+						...state.orders[index],
+						status: newStatus,
+						// Для асинхронного расчета устанавливаем начальные значения
+						...(action.payload.action === 'complete' && {
+							total_result: 0,
+							calculated_count: 0,
+							async_calculated: false,
+						}),
+					}
+					console.log(
+						`✅ [ЛР8] Обновлена заявка #${action.payload.id}, новый статус: ${newStatus}`
+					)
+				}
+				state.error = null
+			})
+			.addCase(completeOrder.rejected, (state, action) => {
+				state.loading = false
+				state.error = action.payload as string
+				console.error(
+					'❌ [ЛР8] Ошибка в extraReducers при завершении:',
+					action.payload
+				)
+			})
+
 			// Обработка getOrdersList
 			.addCase(getOrdersList.pending, state => {
 				state.loading = true
@@ -392,4 +474,9 @@ export const {
 	setOrdersFilter,
 	resetOrdersFilter,
 } = ordersSlice.actions
+
+// ==================== ДОБАВЛЯЕМ ЭКСПОРТ НОВОГО ACTION ДЛЯ ЛР8 ====================
+// ИСПРАВЛЕНО: экспортируем через default export
+export { completeOrder }
+
 export default ordersSlice.reducer

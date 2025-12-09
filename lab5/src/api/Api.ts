@@ -21,6 +21,20 @@ export interface ApiLoginResponse {
   user?: DsMedUserResponse;
 }
 
+export interface DsAsyncResultUpdateRequest {
+  /** AsyncCalculated - флаг что расчет асинхронный */
+  async_calculated?: boolean;
+  /**
+   * AsyncKey - ключ для авторизации (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!)
+   * Django должен отправлять тот же ключ что и в константе AsyncServiceKey
+   */
+  async_key: string;
+  /** CalculatedCount - сколько формул рассчитано */
+  calculated_count?: number;
+  /** TotalResult - результат расчета ДЖЕЛ от Django */
+  total_result: number;
+}
+
 export interface DsCartIconResponse {
   med_card_id?: number;
   med_item_count?: number;
@@ -74,6 +88,22 @@ export interface DsMedUserResponse {
 }
 
 export interface DsPvlcMedCardResponse {
+  /**
+   * AsyncCalculated - флаг асинхронного расчета
+   * Во фронтенде по этому полю можно показать "расчет завершен"
+   */
+  async_calculated?: boolean;
+  /**
+   * CalculatedCount - количество рассчитанных формул
+   * Отправляется во фронтенд для отображения прогресса
+   */
+  calculated_count?: number;
+  /**
+   * CalculationProgress - прогресс вычислений в процентах (0-100)
+   * Рассчитывается на лету: (CalculatedCount / общее количество формул) * 100
+   * Не хранится в БД, только в ответе API
+   */
+  calculation_progress?: number;
   completed_at?: string;
   created_at?: string;
   doctor_name?: string;
@@ -128,6 +158,11 @@ export interface DsUpdatePvlcMedFormulaRequest {
   max_age?: number;
   min_age?: number;
   title?: string;
+}
+
+export interface PvlcMedCardsAsyncResultUpdateParams {
+  /** ID заявки */
+  id: number;
 }
 
 export interface PvlcMedCardsCompleteUpdateParams {
@@ -420,7 +455,29 @@ export namespace Api {
   }
 
   /**
-   * @description Завершает или отклоняет заявку (только для модераторов)
+   * @description Обновляет результаты ДЖЕЛ после асинхронного расчета в Django сервисе Требует правильный ключ авторизации в поле async_key
+   * @tags medical-cards
+   * @name PvlcMedCardsAsyncResultUpdate
+   * @summary Обновление результатов асинхронного расчета
+   * @request PUT:/api/pvlc-med-cards/{id}/async-result
+   * @response `200` `Record<string,string>` OK
+   * @response `400` `Record<string,string>` Bad Request
+   * @response `403` `Record<string,string>` Forbidden
+   * @response `404` `Record<string,string>` Not Found
+   */
+  export namespace PvlcMedCardsAsyncResultUpdate {
+    export type RequestParams = {
+      /** ID заявки */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = DsAsyncResultUpdateRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = Record<string, string>;
+  }
+
+  /**
+   * @description Завершает или отклоняет заявку (только для модераторов) При завершении запускает асинхронный расчет ДЖЕЛ в Django сервисе
    * @tags medical-cards
    * @name PvlcMedCardsCompleteUpdate
    * @summary Завершение/отклонение заявки
@@ -1171,7 +1228,33 @@ export class Api<SecurityDataType extends unknown> {
       }),
 
     /**
-     * @description Завершает или отклоняет заявку (только для модераторов)
+     * @description Обновляет результаты ДЖЕЛ после асинхронного расчета в Django сервисе Требует правильный ключ авторизации в поле async_key
+     *
+     * @tags medical-cards
+     * @name PvlcMedCardsAsyncResultUpdate
+     * @summary Обновление результатов асинхронного расчета
+     * @request PUT:/api/pvlc-med-cards/{id}/async-result
+     * @response `200` `Record<string,string>` OK
+     * @response `400` `Record<string,string>` Bad Request
+     * @response `403` `Record<string,string>` Forbidden
+     * @response `404` `Record<string,string>` Not Found
+     */
+    pvlcMedCardsAsyncResultUpdate: (
+      { id, ...query }: PvlcMedCardsAsyncResultUpdateParams,
+      request: DsAsyncResultUpdateRequest,
+      params: RequestParams = {},
+    ) =>
+      this.http.request<Record<string, string>, Record<string, string>>({
+        path: `/api/pvlc-med-cards/${id}/async-result`,
+        method: "PUT",
+        body: request,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description Завершает или отклоняет заявку (только для модераторов) При завершении запускает асинхронный расчет ДЖЕЛ в Django сервисе
      *
      * @tags medical-cards
      * @name PvlcMedCardsCompleteUpdate
