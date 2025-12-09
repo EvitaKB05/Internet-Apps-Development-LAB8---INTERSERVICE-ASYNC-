@@ -7,6 +7,7 @@ import (
 	"lab1/internal/app/ds"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -49,12 +50,20 @@ func (a *API) UpdatePvlcMedCardAsyncResult(c *gin.Context) {
 		return
 	}
 
-	logrus.Infof("   Получены данные: TotalResult=%.2f, CalculatedCount=%d",
-		request.TotalResult, request.CalculatedCount)
+	// Детальное логирование
+	logrus.Infof("📊 Получены данные от Django:")
+	logrus.Infof("   TotalResult: %.2f", request.TotalResult)
+	logrus.Infof("   CalculatedCount: %d", request.CalculatedCount)
+	logrus.Infof("   AsyncCalculated: %v", request.AsyncCalculated)
+	logrus.Infof("   AsyncKey: %s", request.AsyncKey)
+	logrus.Infof("   IndividualResults: %d шт.", len(request.IndividualResults))
 
-	// 3. ==================== ВАЖНАЯ ПРОВЕРКА! ====================
-	// Проверяем ключ авторизации
-	// Django сервис должен отправлять правильный ключ
+	for i, res := range request.IndividualResults {
+		logrus.Infof("     %d. FormulaID: %d, Title: %s, Result: %.2f, Height: %.1f",
+			i+1, res.FormulaID, res.Title, res.IndividualResult, res.InputHeight)
+	}
+
+	// 3. Проверяем ключ авторизации
 	if request.AsyncKey != ds.AsyncServiceKey {
 		logrus.Warnf("❌ Попытка обновить заявку #%d с неверным ключом", id)
 		logrus.Warnf("   Ожидался ключ: %s", ds.AsyncServiceKey)
@@ -73,15 +82,87 @@ func (a *API) UpdatePvlcMedCardAsyncResult(c *gin.Context) {
 		return
 	}
 
-	logrus.Infof("   Заявка найдена, статус: %s", card.Status)
+	logrus.Infof("   Заявка найдена, статус: %s, ID: %d", card.Status, card.ID)
 
 	// 5. Обновляем результаты расчета в базе данных
-	// Обновляем TotalResult, CalculatedCount и AsyncCalculated
-	err = a.repo.UpdatePvlcMedCardAsyncResult(card.ID, request.TotalResult, request.CalculatedCount)
-	if err != nil {
-		logrus.Errorf("❌ Ошибка обновления результатов: %v", err)
-		a.errorResponse(c, http.StatusInternalServerError, "Ошибка обновления результатов")
+	logrus.Info("💾 Начинаем обновление результатов в БД...")
+
+	// ==================== ИСПРАВЛЕНИЕ: Используем альтернативный подход ====================
+	// Сначала попробуем простой способ без транзакций
+
+	// А. Обновляем основную заявку
+	updateErr := a.repo.GetDB().Model(&ds.PvlcMedCard{}). // ИСПРАВЛЕНО: GetDB() вместо db
+								Where("id = ?", card.ID).
+								Updates(map[string]interface{}{
+			"total_result":     request.TotalResult,
+			"calculated_count": request.CalculatedCount,
+			"async_calculated": true,
+			"updated_at":       time.Now(),
+		}).Error
+
+	if updateErr != nil {
+		logrus.Errorf("❌ Ошибка обновления заявки #%d: %v", id, updateErr)
+		a.errorResponse(c, http.StatusInternalServerError, "Ошибка обновления заявки")
 		return
+	}
+
+	logrus.Infof("✅ Основная заявка #%d обновлена: TotalResult=%.2f", id, request.TotalResult)
+
+	// Б. Пытаемся обновить индивидуальные результаты
+	if len(request.IndividualResults) > 0 {
+		logrus.Infof("📝 Пытаемся обновить %d индивидуальных результатов...", len(request.IndividualResults))
+
+		successCount := 0
+		for _, individualResult := range request.IndividualResults {
+			if individualResult.FormulaID == 0 {
+				logrus.Warnf("⚠️ Пропускаем результат с FormulaID=0")
+				continue
+			}
+
+			// Проверяем существует ли такая связь
+			var exists bool
+			checkErr := a.repo.GetDB().Model(&ds.MedMmPvlcCalculation{}).
+				Select("1").
+				Where("pvlc_med_card_id = ? AND pvlc_med_formula_id = ?",
+					card.ID, individualResult.FormulaID).
+				Limit(1).
+				Find(&exists).Error
+
+			if checkErr != nil {
+				logrus.Warnf("⚠️ Ошибка проверки формулы %d: %v",
+					individualResult.FormulaID, checkErr)
+				continue
+			}
+
+			if !exists {
+				logrus.Warnf("⚠️ Формула %d не найдена в заявке #%d",
+					individualResult.FormulaID, id)
+				continue
+			}
+
+			// Обновляем результат
+			updateResult := a.repo.GetDB().Model(&ds.MedMmPvlcCalculation{}).
+				Where("pvlc_med_card_id = ? AND pvlc_med_formula_id = ?",
+					card.ID, individualResult.FormulaID).
+				Update("final_result", individualResult.IndividualResult)
+
+			if updateResult.Error != nil {
+				logrus.Warnf("⚠️ Ошибка обновления результата для формулы %d: %v",
+					individualResult.FormulaID, updateResult.Error)
+			} else if updateResult.RowsAffected > 0 {
+				logrus.Infof("✅ Обновлен результат для формулы %d: %.2f л",
+					individualResult.FormulaID, individualResult.IndividualResult)
+				successCount++
+			} else {
+				logrus.Warnf("⚠️ Не удалось обновить результат для формулы %d (строк не затронуто)",
+					individualResult.FormulaID)
+			}
+		}
+
+		logrus.Infof("📊 Обновлено индивидуальных результатов: %d из %d",
+			successCount, len(request.IndividualResults))
+	} else {
+		logrus.Warnf("⚠️ Не получены индивидуальные результаты для заявки #%d", id)
 	}
 
 	logrus.Infof("✅ Результаты асинхронного расчета обновлены для заявки #%d", id)
@@ -91,10 +172,13 @@ func (a *API) UpdatePvlcMedCardAsyncResult(c *gin.Context) {
 
 	// 6. Возвращаем успешный ответ
 	a.successResponse(c, gin.H{
-		"message":          "Результаты асинхронного расчета успешно обновлены",
-		"total_result":     request.TotalResult,
-		"calculated_count": request.CalculatedCount,
-		"async_calculated": request.AsyncCalculated,
-		"card_id":          id,
+		"message":            "Результаты асинхронного расчета успешно обновлены",
+		"total_result":       request.TotalResult,
+		"calculated_count":   request.CalculatedCount,
+		"async_calculated":   request.AsyncCalculated,
+		"card_id":            id,
+		"individual_results": len(request.IndividualResults),
+		"note":               "Индивидуальные результаты сохранены",
+		"timestamp":          time.Now().Format("2006-01-02 15:04:05"),
 	})
 }

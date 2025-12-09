@@ -13,6 +13,11 @@ type Repository struct {
 	db *gorm.DB
 }
 
+// ==================== ДОБАВЛЯЕМ НОВЫЙ ПУБЛИЧНЫЙ МЕТОД ====================
+// GetDB возвращает доступ к gorm.DB (для использования в API)
+func (r *Repository) GetDB() *gorm.DB {
+	return r.db
+}
 func NewRepository() (*Repository, error) {
 	_ = godotenv.Load()
 	dsnString := dsn.FromEnv()

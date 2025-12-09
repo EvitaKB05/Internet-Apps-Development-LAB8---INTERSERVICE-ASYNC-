@@ -72,8 +72,15 @@ type MedUserResponse struct {
 	IsModerator bool   `json:"is_moderator"`
 }
 
-// ==================== ДОБАВЛЯЕМ НОВУЮ СТРУКТУРУ ====================
-// Для обработки запросов от Django сервиса
+// ==================== ДОБАВЛЯЕМ НОВЫЕ СТРУКТУРЫ ====================
+// Для обработки индивидуальных результатов от Django сервиса
+
+type IndividualResult struct {
+	FormulaID        uint    `json:"formula_id"`
+	Title            string  `json:"title"`
+	IndividualResult float64 `json:"individual_result"`
+	InputHeight      float64 `json:"input_height"`
+}
 
 type AsyncResultUpdateRequest struct {
 	// TotalResult - результат расчета ДЖЕЛ от Django
@@ -88,4 +95,8 @@ type AsyncResultUpdateRequest struct {
 	// AsyncKey - ключ для авторизации (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!)
 	// Django должен отправлять тот же ключ что и в константе AsyncServiceKey
 	AsyncKey string `json:"async_key" binding:"required"`
+
+	// ==================== ДОБАВЛЯЕМ ПОЛЕ ДЛЯ ИНДИВИДУАЛЬНЫХ РЕЗУЛЬТАТОВ ====================
+	// IndividualResults - результаты для каждого расчета (пациента)
+	IndividualResults []IndividualResult `json:"individual_results,omitempty"`
 }

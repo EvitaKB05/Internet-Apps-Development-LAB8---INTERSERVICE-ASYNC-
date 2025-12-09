@@ -381,18 +381,42 @@ func (r *Repository) InitMinIOBucket() error {
 
 // ==================== НОВЫЕ МЕТОДЫ ДЛЯ АСИНХРОННЫХ ВЫЧИСЛЕНИЙ ====================
 
-// UpdatePvlcMedCardAsyncResult обновляет результаты асинхронного расчета
-// Вызывается когда Django сервис присылает результаты расчета ДЖЕЛ
-func (r *Repository) UpdatePvlcMedCardAsyncResult(cardID uint, totalResult float64, calculatedCount int) error {
-	// Обновляем заявку в базе данных
-	return r.db.Model(&ds.PvlcMedCard{}).
+// ==================== ОБНОВЛЯЕМ МЕТОД ДЛЯ АСИНХРОННЫХ ВЫЧИСЛЕНИЙ ====================
+// ==================== ОБНОВЛЯЕМ МЕТОД ДЛЯ АСИНХРОННЫХ ВЫЧИСЛЕНИЙ ====================
+// ==================== УПРОЩЕННЫЙ МЕТОД ====================
+// SimpleUpdatePvlcMedCardAsyncResult - простая версия без сложных транзакций
+func (r *Repository) SimpleUpdatePvlcMedCardAsyncResult(cardID uint, totalResult float64, calculatedCount int, individualResults []ds.IndividualResult) error {
+	// 1. Обновляем основную заявку
+	err := r.db.Model(&ds.PvlcMedCard{}).
 		Where("id = ?", cardID).
 		Updates(map[string]interface{}{
 			"total_result":     totalResult,
 			"calculated_count": calculatedCount,
 			"async_calculated": true,
-			"updated_at":       time.Now(), // Обновляем время изменения
+			"updated_at":       time.Now(),
 		}).Error
+
+	if err != nil {
+		logrus.Errorf("❌ Простая ошибка обновления заявки #%d: %v", cardID, err)
+		return err
+	}
+
+	logrus.Infof("✅ Заявка #%d просто обновлена: TotalResult=%.2f", cardID, totalResult)
+
+	// 2. Обновляем индивидуальные результаты
+	if len(individualResults) > 0 {
+		for _, res := range individualResults {
+			if res.FormulaID > 0 {
+				// Игнорируем ошибки для простоты
+				r.db.Model(&ds.MedMmPvlcCalculation{}).
+					Where("pvlc_med_card_id = ? AND pvlc_med_formula_id = ?",
+						cardID, res.FormulaID).
+					Update("final_result", res.IndividualResult)
+			}
+		}
+	}
+
+	return nil
 }
 
 // ==================== ИСПРАВЛЯЕМ СУЩЕСТВУЮЩИЙ МЕТОД ====================

@@ -31,7 +31,7 @@ const PvlcMedCardsPage: React.FC = () => {
 	const navigate = useNavigate()
 
 	// ==================== ДОБАВЛЯЕМ ХУК SHORT POLLING ДЛЯ ЛР8 ====================
-	const { isPolling } = useOrdersPolling(10000) // 3 секунды
+	const { isPolling } = useOrdersPolling(10000) // 10 секунды
 
 	// Получаем состояние фильтров из Redux
 	const { orders, loading, error, filter } = useAppSelector(
@@ -306,23 +306,21 @@ const PvlcMedCardsPage: React.FC = () => {
 					<div className='bg-light p-4 rounded mb-4'>
 						<h5 className='mb-3'>
 							<i className='fas fa-user-shield me-1'></i>
-							Режим модератора [ЛР8]
+							Режим модератора
 						</h5>
 						<Row className='g-3 mb-3'>
 							<Col md={6}>
 								<Form.Group>
-									<Form.Label>
-										Фильтр по создателю (клиентская фильтрация)
-									</Form.Label>
+									<Form.Label>Фильтр по создателю</Form.Label>
 									<Form.Control
 										type='text'
 										placeholder='Введите логин пользователя'
 										value={creatorFilter}
 										onChange={e => setCreatorFilter(e.target.value)}
 									/>
-									<Form.Text className='text-muted'>
+									{/* <Form.Text className='text-muted'>
 										Фильтрация на стороне клиента
-									</Form.Text>
+									</Form.Text> */}
 								</Form.Group>
 							</Col>
 							<Col md={6}>
@@ -337,11 +335,11 @@ const PvlcMedCardsPage: React.FC = () => {
 											onChange={e => setShowOnlyMine(e.target.checked)}
 											disabled={!isModerator}
 										/>
-										<Form.Text className='text-muted'>
+										{/* <Form.Text className='text-muted'>
 											{isModerator
 												? 'Для модераторов показывает все заявки'
 												: 'Только для ваших заявок'}
-										</Form.Text>
+										</Form.Text> */}
 									</div>
 								</Form.Group>
 							</Col>
@@ -351,7 +349,7 @@ const PvlcMedCardsPage: React.FC = () => {
 
 				{/* Панель фильтрации */}
 				<div className='bg-light p-4 rounded mb-4'>
-					<h5 className='mb-3'>Фильтрация заявок [ЛР8]</h5>
+					<h5 className='mb-3'>Фильтры</h5>
 					<Form>
 						<Row className='g-3'>
 							<Col md={4}>
@@ -364,9 +362,9 @@ const PvlcMedCardsPage: React.FC = () => {
 											handleFilterChange('date_from', e.target.value)
 										}
 									/>
-									<Form.Text className='text-muted'>
+									{/* <Form.Text className='text-muted'>
 										Фильтр по дате создания заявки (бэкенд)
-									</Form.Text>
+									</Form.Text> */}
 								</Form.Group>
 							</Col>
 
@@ -380,9 +378,9 @@ const PvlcMedCardsPage: React.FC = () => {
 											handleFilterChange('updated_date_from', e.target.value)
 										}
 									/>
-									<Form.Text className='text-muted'>
+									{/* <Form.Text className='text-muted'>
 										Фильтр по дате последнего обновления (бэкенд)
-									</Form.Text>
+									</Form.Text> */}
 								</Form.Group>
 							</Col>
 

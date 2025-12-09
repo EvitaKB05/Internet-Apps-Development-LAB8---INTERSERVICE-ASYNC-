@@ -1564,6 +1564,13 @@ const docTemplate = `{
                     "description": "CalculatedCount - сколько формул рассчитано",
                     "type": "integer"
                 },
+                "individual_results": {
+                    "description": "==================== ДОБАВЛЯЕМ ПОЛЕ ДЛЯ ИНДИВИДУАЛЬНЫХ РЕЗУЛЬТАТОВ ====================\nIndividualResults - результаты для каждого расчета (пациента)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ds.IndividualResult"
+                    }
+                },
                 "total_result": {
                     "description": "TotalResult - результат расчета ДЖЕЛ от Django",
                     "type": "number"
@@ -1639,6 +1646,23 @@ const docTemplate = `{
                 },
                 "pvlc_med_formula_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "ds.IndividualResult": {
+            "type": "object",
+            "properties": {
+                "formula_id": {
+                    "type": "integer"
+                },
+                "individual_result": {
+                    "type": "number"
+                },
+                "input_height": {
+                    "type": "number"
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },

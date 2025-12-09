@@ -8,6 +8,7 @@ import {
 	Form,
 	Row,
 	Col,
+	Badge,
 } from 'react-bootstrap'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../hooks/redux'
@@ -23,10 +24,26 @@ import { deleteCalculation } from '../store/slices/medCalculationsSlice'
 import { getCartIcon } from '../store/slices/cartSlice'
 import Breadcrumbs from '../components/Breadcrumbs'
 import { apiService } from '../services/api'
+import type {
+	DsPvlcMedCardResponse,
+	DsMedMmPvlcCalculationResponse,
+} from '../api'
 
 // Тип для состояния сохранения роста
 interface HeightSaveState {
 	[formulaId: number]: boolean
+}
+
+// Тип для хранения значений роста
+interface HeightValues {
+	[formulaId: number]: number
+}
+
+// Тип для прогресса расчета
+interface CalculationProgress {
+	calculated: number
+	total: number
+	percent: number
 }
 
 const PvlcMedCardPage: React.FC = () => {
@@ -44,20 +61,33 @@ const PvlcMedCardPage: React.FC = () => {
 	)
 
 	// Локальное состояние для редактирования
-	const [editMode, setEditMode] = useState(false)
-	const [formData, setFormData] = useState({
+	const [editMode, setEditMode] = useState<boolean>(false)
+	const [formData, setFormData] = useState<{
+		patient_name: string
+		doctor_name: string
+	}>({
 		patient_name: '',
 		doctor_name: '',
 	})
 
-	// Локальное состояние для роста (убраны таймеры автосохранения)
-	const [heightValues, setHeightValues] = useState<Record<number, number>>({})
+	// Локальное состояние для роста
+	const [heightValues, setHeightValues] = useState<HeightValues>({})
 	const [heightSaved, setHeightSaved] = useState<HeightSaveState>({})
+
+	// Состояние для отслеживания прогресса расчета
+	const [calculationProgress, setCalculationProgress] =
+		useState<CalculationProgress | null>(null)
+
+	// Проверяем, является ли заявка черновиком
+	const isDraft = currentOrder?.status === 'черновик'
 
 	// Загружаем данные заявки при монтировании
 	useEffect(() => {
 		if (id && isAuthenticated) {
-			dispatch(getOrderDetail(parseInt(id)))
+			const parsedId = parseInt(id, 10)
+			if (!isNaN(parsedId)) {
+				dispatch(getOrderDetail(parsedId))
+			}
 		}
 	}, [dispatch, id, isAuthenticated])
 
@@ -71,18 +101,45 @@ const PvlcMedCardPage: React.FC = () => {
 			})
 
 			// Инициализируем значения роста из расчетов
-			const initialHeights: Record<number, number> = {}
+			const initialHeights: HeightValues = {}
 			const initialSaved: HeightSaveState = {}
-			if (currentOrder.med_calculations) {
-				currentOrder.med_calculations.forEach(calc => {
-					if (calc.pvlc_med_formula_id && calc.input_height) {
-						initialHeights[calc.pvlc_med_formula_id] = calc.input_height
-						initialSaved[calc.pvlc_med_formula_id] = true // Уже сохранено в БД
+
+			if (
+				currentOrder.med_calculations &&
+				currentOrder.med_calculations.length > 0
+			) {
+				currentOrder.med_calculations.forEach(
+					(calc: DsMedMmPvlcCalculationResponse) => {
+						const formulaId = calc.pvlc_med_formula_id
+						const inputHeight = calc.input_height
+
+						if (formulaId && inputHeight) {
+							initialHeights[formulaId] = inputHeight
+							initialSaved[formulaId] = true // Уже сохранено в БД
+						}
 					}
-				})
+				)
 			}
+
 			setHeightValues(initialHeights)
 			setHeightSaved(initialSaved)
+
+			// Расчет прогресса асинхронного расчета
+			if (currentOrder.status === 'завершен' && currentOrder.med_calculations) {
+				const totalCalculations: number = currentOrder.med_calculations.length
+				const calculatedCount: number = currentOrder.calculated_count || 0
+
+				setCalculationProgress({
+					calculated: calculatedCount,
+					total: totalCalculations,
+					percent:
+						totalCalculations > 0
+							? (calculatedCount / totalCalculations) * 100
+							: 0,
+				})
+			} else {
+				setCalculationProgress(null)
+			}
 		}
 	}, [currentOrder])
 
@@ -100,7 +157,8 @@ const PvlcMedCardPage: React.FC = () => {
 		}
 	}, [dispatch])
 
-	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+	// Функция обработки изменения полей формы
+	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
 		const { name, value } = e.target
 		setFormData({
 			...formData,
@@ -108,8 +166,9 @@ const PvlcMedCardPage: React.FC = () => {
 		})
 	}
 
-	const handleHeightChange = (formulaId: number, value: string) => {
-		const numValue = parseFloat(value) || 0
+	// Функция обработки изменения роста
+	const handleHeightChange = (formulaId: number, value: string): void => {
+		const numValue: number = parseFloat(value) || 0
 
 		// Обновляем локальное состояние
 		setHeightValues({
@@ -125,10 +184,13 @@ const PvlcMedCardPage: React.FC = () => {
 	}
 
 	// Функция ручного сохранения роста
-	const handleSaveHeight = async (formulaId: number) => {
-		if (!id || !currentOrder?.id) return
+	const handleSaveHeight = async (formulaId: number): Promise<void> => {
+		if (!id || !currentOrder?.id) {
+			alert('Некорректный ID заявки')
+			return
+		}
 
-		const height = heightValues[formulaId]
+		const height: number = heightValues[formulaId]
 		if (!height || height <= 0) {
 			alert('Введите корректное значение роста (больше 0)')
 			return
@@ -157,32 +219,41 @@ const PvlcMedCardPage: React.FC = () => {
 	}
 
 	// Функция сохранения данных заявки
-	const handleSave = async () => {
-		if (id) {
-			try {
-				const result = await dispatch(
-					updateOrder({
-						id: parseInt(id),
-						data: formData,
-					})
-				).unwrap()
+	const handleSave = async (): Promise<void> => {
+		if (!id) {
+			alert('Некорректный ID заявки')
+			return
+		}
 
-				console.log('Заявка сохранена:', result)
+		const parsedId: number = parseInt(id, 10)
+		if (isNaN(parsedId)) {
+			alert('Некорректный ID заявки')
+			return
+		}
 
-				// Выходим из режима редактирования
-				setEditMode(false)
+		try {
+			await dispatch(
+				updateOrder({
+					id: parsedId,
+					data: formData,
+				})
+			).unwrap()
 
-				// Обновляем данные заявки после сохранения
-				dispatch(getOrderDetail(parseInt(id)))
-			} catch (error) {
-				console.error('Ошибка сохранения заявки:', error)
-				alert('Ошибка сохранения заявки')
-			}
+			console.log('Заявка сохранена')
+
+			// Выходим из режима редактирования
+			setEditMode(false)
+
+			// Обновляем данные заявки после сохранения
+			dispatch(getOrderDetail(parsedId))
+		} catch (error) {
+			console.error('Ошибка сохранения заявки:', error)
+			alert('Ошибка сохранения заявки')
 		}
 	}
 
 	// Функция отмены редактирования
-	const handleCancel = () => {
+	const handleCancel = (): void => {
 		// Восстанавливаем исходные данные из currentOrder
 		if (currentOrder) {
 			setFormData({
@@ -193,30 +264,56 @@ const PvlcMedCardPage: React.FC = () => {
 		setEditMode(false)
 	}
 
-	const handleDelete = async () => {
-		if (id && window.confirm('Вы уверены, что хотите удалить эту заявку?')) {
-			await dispatch(deleteOrder(parseInt(id)))
+	// Функция удаления заявки
+	const handleDelete = async (): Promise<void> => {
+		if (!id) {
+			alert('Некорректный ID заявки')
+			return
+		}
+
+		const parsedId: number = parseInt(id, 10)
+		if (isNaN(parsedId)) {
+			alert('Некорректный ID заявки')
+			return
+		}
+
+		if (window.confirm('Вы уверены, что хотите удалить эту заявку?')) {
+			await dispatch(deleteOrder(parsedId))
 			// Обновляем иконку корзины
 			dispatch(getCartIcon())
 			navigate('/pvlc_med_cards')
 		}
 	}
 
-	const handleFormOrder = async () => {
+	// Функция формирования заявки
+	const handleFormOrder = async (): Promise<void> => {
+		if (!id) {
+			alert('Некорректный ID заявки')
+			return
+		}
+
+		const parsedId: number = parseInt(id, 10)
+		if (isNaN(parsedId)) {
+			alert('Некорректный ID заявки')
+			return
+		}
+
 		if (
-			id &&
 			window.confirm(
 				'Сформировать заявку? После этого редактирование будет невозможно.'
 			)
 		) {
-			await dispatch(formOrder(parseInt(id)))
+			await dispatch(formOrder(parsedId))
 			// Обновляем данные
-			dispatch(getOrderDetail(parseInt(id)))
+			dispatch(getOrderDetail(parsedId))
 		}
 	}
 
 	// Функция для удаления формулы из заявки
-	const handleDeleteCalculation = async (cardId: number, formulaId: number) => {
+	const handleDeleteCalculation = async (
+		cardId: number,
+		formulaId: number
+	): Promise<void> => {
 		if (window.confirm('Удалить эту формулу из заявки?')) {
 			try {
 				await dispatch(
@@ -228,9 +325,12 @@ const PvlcMedCardPage: React.FC = () => {
 
 				// Обновляем данные заявки
 				if (id) {
-					dispatch(getOrderDetail(parseInt(id)))
-					// Обновляем иконку корзины
-					dispatch(getCartIcon())
+					const parsedId: number = parseInt(id, 10)
+					if (!isNaN(parsedId)) {
+						dispatch(getOrderDetail(parsedId))
+						// Обновляем иконку корзины
+						dispatch(getCartIcon())
+					}
 				}
 			} catch (error) {
 				console.error('Ошибка удаления формулы:', error)
@@ -240,13 +340,15 @@ const PvlcMedCardPage: React.FC = () => {
 	}
 
 	// Функция форматирования даты
-	const formatDate = (dateString?: string) => {
+	const formatDate = (dateString?: string): string => {
 		if (!dateString) return '—'
+
 		try {
-			const date = new Date(dateString)
+			const date: Date = new Date(dateString)
 			if (isNaN(date.getTime())) {
 				return '—'
 			}
+
 			return date.toLocaleDateString('ru-RU', {
 				day: '2-digit',
 				month: '2-digit',
@@ -259,8 +361,157 @@ const PvlcMedCardPage: React.FC = () => {
 		}
 	}
 
-	const isDraft = currentOrder?.status === 'черновик'
+	// Функция получения URL изображения
+	const getImageUrl = (imageUrl?: string): string => {
+		if (!imageUrl) return '/DefaultImage.jpg'
 
+		try {
+			return apiService.getImageUrl(imageUrl)
+		} catch {
+			return '/DefaultImage.jpg'
+		}
+	}
+
+	// Функция для отображения статуса асинхронного расчета
+	const renderCalculationStatus = (): React.ReactNode => {
+		if (!currentOrder) return null
+
+		const isCompleted: boolean = currentOrder.status === 'завершен'
+		const isAsyncCalculated: boolean = currentOrder.async_calculated || false
+		const hasCalculations: boolean = !!(
+			currentOrder.med_calculations && currentOrder.med_calculations.length > 0
+		)
+
+		if (!isCompleted) return null
+
+		if (isAsyncCalculated && calculationProgress) {
+			return (
+				<Alert variant='success' className='mt-3'>
+					<h5>
+						<i className='fas fa-check-circle me-2'></i>
+						Асинхронный расчет ДЖЕЛ завершен [ЛР8]
+					</h5>
+					<p className='mb-1'>
+						<strong>Общий результат:</strong>{' '}
+						{currentOrder.total_result?.toFixed(2) || '0.00'} л
+					</p>
+					<p className='mb-1'>
+						<strong>Рассчитано пациентов:</strong>{' '}
+						{calculationProgress.calculated} из {calculationProgress.total}
+					</p>
+					{calculationProgress.percent > 0 && (
+						<div className='mt-2'>
+							<div className='progress' style={{ height: '20px' }}>
+								<div
+									className='progress-bar progress-bar-striped progress-bar-animated'
+									role='progressbar'
+									style={{ width: `${calculationProgress.percent}%` }}
+									aria-valuenow={calculationProgress.percent}
+									aria-valuemin={0}
+									aria-valuemax={100}
+								>
+									{calculationProgress.percent.toFixed(0)}%
+								</div>
+							</div>
+							<small className='text-muted'>
+								Прогресс асинхронного расчета (short polling)
+							</small>
+						</div>
+					)}
+				</Alert>
+			)
+		} else if (isCompleted && !isAsyncCalculated && hasCalculations) {
+			return (
+				<Alert variant='warning' className='mt-3'>
+					<h5>
+						<i className='fas fa-spinner fa-spin me-2'></i>
+						Асинхронный расчет ДЖЕЛ выполняется [ЛР8]
+					</h5>
+					<p className='mb-0'>
+						Расчет выполняется в фоновом режиме через Django сервис. Обновите
+						страницу через 5-10 секунд для получения результатов.
+					</p>
+					<small className='text-muted'>
+						Используется short polling для автоматического обновления
+					</small>
+				</Alert>
+			)
+		}
+
+		return null
+	}
+
+	// Функция для отображения результата расчета
+	const renderCalculationResult = (
+		calc: DsMedMmPvlcCalculationResponse
+	): React.ReactNode => {
+		if (!currentOrder) return null
+
+		const hasResult: boolean = !!(calc.final_result && calc.final_result > 0)
+		const isAsyncCalculated: boolean = currentOrder.async_calculated || false
+		const isCompleted: boolean = currentOrder.status === 'завершен'
+
+		if (isCompleted && !isAsyncCalculated) {
+			// Расчет в процессе выполнения
+			return (
+				<div className='text-warning'>
+					<i className='fas fa-spinner fa-spin me-1'></i>
+					Расчет выполняется...
+				</div>
+			)
+		} else if (hasResult) {
+			// Результат рассчитан
+			return (
+				<div className='text-success'>
+					<strong>{calc.final_result?.toFixed(2) || '0.00'} л</strong>
+					{currentOrder.async_calculated && (
+						<Badge bg='info' className='ms-2' title='Асинхронный расчет [ЛР8]'>
+							Асинхр.
+						</Badge>
+					)}
+				</div>
+			)
+		} else if (isCompleted && isAsyncCalculated) {
+			// Расчет завершен, но результат не получен (ошибка)
+			return (
+				<div className='text-danger'>
+					<i className='fas fa-exclamation-triangle me-1'></i>
+					Ошибка расчета
+				</div>
+			)
+		} else {
+			// Расчет не выполнялся
+			return <span className='text-muted'>не рассчитано</span>
+		}
+	}
+
+	// Получаем цвет бейджа для статуса
+	const getStatusBadgeColor = (status?: string): string => {
+		switch (status) {
+			case 'черновик':
+				return 'warning'
+			case 'сформирован':
+				return 'info'
+			case 'завершен':
+				return 'success'
+			case 'отклонен':
+				return 'danger'
+			default:
+				return 'secondary'
+		}
+	}
+
+	// Вспомогательная функция для безопасного получения ID формулы
+	const getFormulaId = (calc: DsMedMmPvlcCalculationResponse): number => {
+		return calc.pvlc_med_formula_id || 0
+	}
+
+	// Вспомогательная функция для безопасного получения ID заявки
+	const getCardId = (order: DsPvlcMedCardResponse): number => {
+		return order.id || 0
+	}
+
+	// Состояние загрузки
 	if (loading) {
 		return (
 			<Container className='text-center py-5'>
@@ -272,6 +523,7 @@ const PvlcMedCardPage: React.FC = () => {
 		)
 	}
 
+	// Обработка ошибок
 	if (error) {
 		return (
 			<Container>
@@ -290,6 +542,7 @@ const PvlcMedCardPage: React.FC = () => {
 		)
 	}
 
+	// Если заявка не найдена
 	if (!currentOrder) {
 		return (
 			<Container>
@@ -308,18 +561,13 @@ const PvlcMedCardPage: React.FC = () => {
 		)
 	}
 
-	// Получаем URL изображения
-	const getImageUrl = (imageUrl?: string) => {
-		return imageUrl ? apiService.getImageUrl(imageUrl) : '/DefaultImage.jpg'
-	}
-
 	return (
 		<Container fluid className='px-0'>
 			<Breadcrumbs
 				items={[
 					{ label: 'Главная', path: '/pvlc_home_page' },
 					{ label: 'Мои заявки', path: '/pvlc_med_cards' },
-					{ label: `Заявка #${currentOrder.id}` },
+					{ label: `Заявка #${currentOrder.id || 'N/A'}` },
 				]}
 			/>
 
@@ -343,11 +591,17 @@ const PvlcMedCardPage: React.FC = () => {
 									<Form.Group>
 										<Form.Label>Статус</Form.Label>
 										<div>
-											<span
-												className={`badge bg-${isDraft ? 'warning' : 'info'}`}
-											>
-												{currentOrder.status}
-											</span>
+											<Badge bg={getStatusBadgeColor(currentOrder.status)}>
+												{currentOrder.status || 'Неизвестно'}
+												{currentOrder.async_calculated && (
+													<span
+														className='ms-1'
+														title='Асинхронный расчет [ЛР8]'
+													>
+														⚡
+													</span>
+												)}
+											</Badge>
 										</div>
 									</Form.Group>
 								</Col>
@@ -355,7 +609,18 @@ const PvlcMedCardPage: React.FC = () => {
 									<Form.Group>
 										<Form.Label>Общий результат ДЖЕЛ</Form.Label>
 										<div>
-											<strong>{currentOrder.total_result || '0'} л</strong>
+											<strong>
+												{currentOrder.total_result?.toFixed(2) || '0.00'} л
+											</strong>
+											{currentOrder.async_calculated && (
+												<Badge
+													bg='info'
+													className='ms-2'
+													title='Асинхронный расчет [ЛР8]'
+												>
+													Асинхр.
+												</Badge>
+											)}
 										</div>
 									</Form.Group>
 								</Col>
@@ -383,6 +648,9 @@ const PvlcMedCardPage: React.FC = () => {
 									</Form.Group>
 								</Col>
 							</Row>
+
+							{/* Статус асинхронного расчета */}
+							{renderCalculationStatus()}
 
 							<Row>
 								<Col md={6}>
@@ -417,8 +685,7 @@ const PvlcMedCardPage: React.FC = () => {
 										) : (
 											<div>{formData.doctor_name || '-'}</div>
 										)}
-									</Form.Group>{' '}
-									{/* ИСПРАВЛЕНИЕ: Закрывающий тег должен быть </Form.Group> */}
+									</Form.Group>
 								</Col>
 							</Row>
 						</div>
@@ -426,143 +693,162 @@ const PvlcMedCardPage: React.FC = () => {
 
 					{/* Выбранные формулы в стиле HTML-примера */}
 					<section className='selected-categories'>
-						<h2 className='section-title'>Выбранные категории</h2>
+						<h2 className='section-title'>Выбранные категории (пациенты)</h2>
+
+						{/* Информация о количестве пациентов */}
+						{currentOrder.med_calculations &&
+							currentOrder.med_calculations.length > 0 && (
+								<div className='mb-3'>
+									<small className='text-muted'>
+										Всего пациентов: {currentOrder.med_calculations.length} |
+										Рассчитано: {currentOrder.calculated_count || 0} | Статус:{' '}
+										{currentOrder.async_calculated
+											? 'Асинхронный расчет завершен'
+											: 'Ожидается расчет'}
+									</small>
+								</div>
+							)}
 
 						{currentOrder.med_calculations &&
 						currentOrder.med_calculations.length > 0 ? (
 							<div className='categories-grid'>
-								{currentOrder.med_calculations.map(calc => (
-									<div key={calc.pvlc_med_formula_id} className='category-card'>
-										<div className='category-image-container'>
-											<div className='category-image'>
-												<img
-													src={getImageUrl(calc.image_url)}
-													alt={calc.title}
-													className='category-img'
-												/>
-											</div>
-											<div className='category-title-plain'>{calc.title}</div>
-										</div>
-										<div className='category-info'>
-											<div className='category-details'>
-												<div className='parameters-row'>
-													{/* Поле для ввода роста с кнопкой сохранения */}
-													<div className='parameter-group'>
-														<span className='parameter-label'>Рост:</span>
-														<input
-															type='number'
-															className='height-input'
-															placeholder='см'
-															min='50'
-															max='250'
-															value={
-																heightValues[calc.pvlc_med_formula_id!] || ''
-															}
-															onChange={e =>
-																handleHeightChange(
-																	calc.pvlc_med_formula_id!,
-																	e.target.value
-																)
-															}
-															disabled={!isDraft || updatingHeight}
-															style={{ marginRight: '10px' }}
-														/>
-														{/* Кнопка сохранения роста - ИЗМЕНЕНИЕ: добавлена кнопка с галочкой */}
-														{isDraft && calc.pvlc_med_formula_id && (
-															<button
-																type='button'
-																className={`btn btn-${
-																	heightSaved[calc.pvlc_med_formula_id]
-																		? 'success'
-																		: 'outline-primary'
-																} btn-sm`}
-																onClick={() =>
-																	handleSaveHeight(calc.pvlc_med_formula_id!)
-																}
-																disabled={updatingHeight}
-																title={
-																	heightSaved[calc.pvlc_med_formula_id]
-																		? 'Сохранено'
-																		: 'Сохранить рост'
-																}
-																style={{
-																	padding: '0.4rem 0.6rem',
-																	minWidth: '40px',
-																	display: 'flex',
-																	alignItems: 'center',
-																	justifyContent: 'center',
-																}}
-															>
-																{updatingHeight ? (
-																	<Spinner
-																		as='span'
-																		animation='border'
-																		size='sm'
-																	/>
-																) : heightSaved[calc.pvlc_med_formula_id] ? (
-																	<span style={{ fontSize: '16px' }}>✓</span>
-																) : (
-																	<span style={{ fontSize: '16px' }}>✓</span>
-																)}
-															</button>
-														)}
-													</div>
-													{/* Результат ДЖЕЛ */}
-													<div className='parameter-group'>
-														<span className='parameter-label'>
-															Результат ДЖЕЛ:
-														</span>
-														<input
-															type='text'
-															className='result-input'
-															value={
-																calc.final_result
-																	? `${calc.final_result} л`
-																	: 'не рассчитано'
-															}
-															placeholder='л'
-															readOnly
+								{currentOrder.med_calculations.map(
+									(calc: DsMedMmPvlcCalculationResponse, index: number) => {
+										const formulaId: number = getFormulaId(calc)
+										const cardId: number = getCardId(currentOrder)
+
+										return (
+											<div
+												key={`${formulaId}-${index}`}
+												className='category-card'
+											>
+												<div className='category-image-container'>
+													<div className='category-image'>
+														<img
+															src={getImageUrl(calc.image_url)}
+															alt={calc.title || `Расчет ${index + 1}`}
+															className='category-img'
 														/>
 													</div>
-													{/* Кнопка удаления формулы */}
-													{isDraft && (
-														<div className='parameter-group'>
-															<button
-																type='button'
-																className='btn btn-danger btn-sm'
-																onClick={() =>
-																	handleDeleteCalculation(
-																		currentOrder.id!,
-																		calc.pvlc_med_formula_id!
-																	)
-																}
-																title='Удалить из заявки'
-																disabled={deletingCalculation || updatingHeight}
-																style={{
-																	padding: '0.4rem 0.8rem',
-																	marginLeft: '10px',
-																	display: 'flex',
-																	alignItems: 'center',
-																	justifyContent: 'center',
-																}}
-															>
-																{deletingCalculation ? (
-																	<Spinner
-																		as='span'
-																		animation='border'
-																		size='sm'
-																	/>
-																) : (
-																	'🗑️'
+													<div className='category-title-plain'>
+														{calc.title || `Расчет ${index + 1}`}
+													</div>
+												</div>
+												<div className='category-info'>
+													<div className='category-details'>
+														<div className='parameters-row'>
+															{/* Поле для ввода роста с кнопкой сохранения */}
+															<div className='parameter-group'>
+																<span className='parameter-label'>Рост:</span>
+																<input
+																	type='number'
+																	className='height-input'
+																	placeholder='см'
+																	min='50'
+																	max='250'
+																	value={heightValues[formulaId] || ''}
+																	onChange={(
+																		e: React.ChangeEvent<HTMLInputElement>
+																	) =>
+																		handleHeightChange(
+																			formulaId,
+																			e.target.value
+																		)
+																	}
+																	disabled={!isDraft || updatingHeight}
+																	style={{ marginRight: '10px' }}
+																/>
+																{/* Кнопка сохранения роста */}
+																{isDraft && formulaId > 0 && (
+																	<button
+																		type='button'
+																		className={`btn btn-${
+																			heightSaved[formulaId]
+																				? 'success'
+																				: 'outline-primary'
+																		} btn-sm`}
+																		onClick={() => handleSaveHeight(formulaId)}
+																		disabled={updatingHeight}
+																		title={
+																			heightSaved[formulaId]
+																				? 'Сохранено'
+																				: 'Сохранить рост'
+																		}
+																		style={{
+																			padding: '0.4rem 0.6rem',
+																			minWidth: '40px',
+																			display: 'flex',
+																			alignItems: 'center',
+																			justifyContent: 'center',
+																		}}
+																	>
+																		{updatingHeight ? (
+																			<Spinner
+																				as='span'
+																				animation='border'
+																				size='sm'
+																			/>
+																		) : heightSaved[formulaId] ? (
+																			<span style={{ fontSize: '16px' }}>
+																				✓
+																			</span>
+																		) : (
+																			<span style={{ fontSize: '16px' }}>
+																				✓
+																			</span>
+																		)}
+																	</button>
 																)}
-															</button>
+															</div>
+															{/* Результат ДЖЕЛ */}
+															<div className='parameter-group'>
+																<span className='parameter-label'>
+																	Результат ДЖЕЛ:
+																</span>
+																<div className='result-display'>
+																	{renderCalculationResult(calc)}
+																</div>
+															</div>
+															{/* Кнопка удаления формулы */}
+															{isDraft && cardId > 0 && formulaId > 0 && (
+																<div className='parameter-group'>
+																	<button
+																		type='button'
+																		className='btn btn-danger btn-sm'
+																		onClick={() =>
+																			handleDeleteCalculation(cardId, formulaId)
+																		}
+																		title='Удалить из заявки'
+																		disabled={
+																			deletingCalculation || updatingHeight
+																		}
+																		style={{
+																			padding: '0.4rem 0.8rem',
+																			marginLeft: '10px',
+																			display: 'flex',
+																			alignItems: 'center',
+																			justifyContent: 'center',
+																		}}
+																	>
+																		{deletingCalculation ? (
+																			<Spinner
+																				as='span'
+																				animation='border'
+																				size='sm'
+																			/>
+																		) : (
+																			'🗑️'
+																		)}
+																	</button>
+																</div>
+															)}
 														</div>
-													)}
+													</div>
 												</div>
 											</div>
-										</div>
-									</div>
-								))}
+										)
+									}
+								)}
 							</div>
 						) : (
 							<Alert variant='info'>
