@@ -1,5 +1,5 @@
 // src/pages/PvlcMedCardPage.tsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
 	Container,
 	Button,
@@ -29,6 +29,9 @@ import type {
 	DsMedMmPvlcCalculationResponse,
 } from '../api'
 
+// Типы из нашей локальной типизации
+//import type { PvlcMedCard, MedCalculation, CartIconResponse } from '../types'
+
 // Тип для состояния сохранения роста
 interface HeightSaveState {
 	[formulaId: number]: boolean
@@ -44,6 +47,12 @@ interface CalculationProgress {
 	calculated: number
 	total: number
 	percent: number
+}
+
+// Типы для локального состояния формы
+interface FormData {
+	patient_name: string
+	doctor_name: string
 }
 
 const PvlcMedCardPage: React.FC = () => {
@@ -62,10 +71,7 @@ const PvlcMedCardPage: React.FC = () => {
 
 	// Локальное состояние для редактирования
 	const [editMode, setEditMode] = useState<boolean>(false)
-	const [formData, setFormData] = useState<{
-		patient_name: string
-		doctor_name: string
-	}>({
+	const [formData, setFormData] = useState<FormData>({
 		patient_name: '',
 		doctor_name: '',
 	})
@@ -80,6 +86,36 @@ const PvlcMedCardPage: React.FC = () => {
 
 	// Проверяем, является ли заявка черновиком
 	const isDraft = currentOrder?.status === 'черновик'
+
+	// ==================== ВАЖНОЕ ИСПРАВЛЕНИЕ ====================
+	// Функция для проверки состояния асинхронного расчета
+	const checkAsyncCalculationStatus = useCallback((): {
+		isCompleted: boolean
+		isAsyncCalculated: boolean
+		hasCalculations: boolean
+	} => {
+		if (!currentOrder) {
+			return {
+				isCompleted: false,
+				isAsyncCalculated: false,
+				hasCalculations: false,
+			}
+		}
+
+		const isCompleted: boolean = currentOrder.status === 'завершен'
+		// ==================== КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ====================
+		// Используем явную проверку на true, так как поле может быть undefined
+		const isAsyncCalculated: boolean = currentOrder.async_calculated === true
+		const hasCalculations: boolean = Boolean(
+			currentOrder.med_calculations && currentOrder.med_calculations.length > 0
+		)
+
+		return {
+			isCompleted,
+			isAsyncCalculated,
+			hasCalculations,
+		}
+	}, [currentOrder])
 
 	// Загружаем данные заявки при монтировании
 	useEffect(() => {
@@ -124,24 +160,32 @@ const PvlcMedCardPage: React.FC = () => {
 			setHeightValues(initialHeights)
 			setHeightSaved(initialSaved)
 
-			// Расчет прогресса асинхронного расчета
-			if (currentOrder.status === 'завершен' && currentOrder.med_calculations) {
+			// ==================== ИСПРАВЛЕННЫЙ РАСЧЕТ ПРОГРЕССА ====================
+			const { isCompleted, isAsyncCalculated } = checkAsyncCalculationStatus()
+
+			if (isCompleted && currentOrder.med_calculations) {
 				const totalCalculations: number = currentOrder.med_calculations.length
 				const calculatedCount: number = currentOrder.calculated_count || 0
 
-				setCalculationProgress({
-					calculated: calculatedCount,
-					total: totalCalculations,
-					percent:
-						totalCalculations > 0
-							? (calculatedCount / totalCalculations) * 100
-							: 0,
-				})
+				// Для асинхронного расчета показываем прогресс только если async_calculated = true
+				if (isAsyncCalculated) {
+					setCalculationProgress({
+						calculated: calculatedCount,
+						total: totalCalculations,
+						percent:
+							totalCalculations > 0
+								? (calculatedCount / totalCalculations) * 100
+								: 0,
+					})
+				} else {
+					// Для расчета в процессе не показываем прогресс
+					setCalculationProgress(null)
+				}
 			} else {
 				setCalculationProgress(null)
 			}
 		}
-	}, [currentOrder])
+	}, [currentOrder, checkAsyncCalculationStatus])
 
 	// Если пользователь не авторизован, перенаправляем на вход
 	useEffect(() => {
@@ -156,6 +200,8 @@ const PvlcMedCardPage: React.FC = () => {
 			dispatch(clearOrdersError())
 		}
 	}, [dispatch])
+
+	// ==================== ФУНКЦИИ ОБРАБОТКИ СОБЫТИЙ ====================
 
 	// Функция обработки изменения полей формы
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -212,8 +258,8 @@ const PvlcMedCardPage: React.FC = () => {
 			})
 
 			console.log(`Рост для формулы ${formulaId} сохранен`)
-		} catch (error) {
-			console.error('Ошибка сохранения роста:', error)
+		} catch (err) {
+			console.error('Ошибка сохранения роста:', err)
 			alert('Ошибка при сохранении роста')
 		}
 	}
@@ -246,8 +292,8 @@ const PvlcMedCardPage: React.FC = () => {
 
 			// Обновляем данные заявки после сохранения
 			dispatch(getOrderDetail(parsedId))
-		} catch (error) {
-			console.error('Ошибка сохранения заявки:', error)
+		} catch (err) {
+			console.error('Ошибка сохранения заявки:', err)
 			alert('Ошибка сохранения заявки')
 		}
 	}
@@ -332,12 +378,14 @@ const PvlcMedCardPage: React.FC = () => {
 						dispatch(getCartIcon())
 					}
 				}
-			} catch (error) {
-				console.error('Ошибка удаления формулы:', error)
+			} catch (err) {
+				console.error('Ошибка удаления формулы:', err)
 				alert('Ошибка удаления формулы')
 			}
 		}
 	}
+
+	// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 	// Функция форматирования даты
 	const formatDate = (dateString?: string): string => {
@@ -372,15 +420,40 @@ const PvlcMedCardPage: React.FC = () => {
 		}
 	}
 
+	// Функция для получения цвета бейджа статуса
+	const getStatusBadgeColor = (status?: string): string => {
+		switch (status) {
+			case 'черновик':
+				return 'warning'
+			case 'сформирован':
+				return 'info'
+			case 'завершен':
+				return 'success'
+			case 'отклонен':
+				return 'danger'
+			default:
+				return 'secondary'
+		}
+	}
+
+	// Вспомогательная функция для безопасного получения ID формулы
+	const getFormulaId = (calc: DsMedMmPvlcCalculationResponse): number => {
+		return calc.pvlc_med_formula_id || 0
+	}
+
+	// Вспомогательная функция для безопасного получения ID заявки
+	const getCardId = (order: DsPvlcMedCardResponse): number => {
+		return order.id || 0
+	}
+
+	// ==================== ФУНКЦИИ ОТОБРАЖЕНИЯ ====================
+
 	// Функция для отображения статуса асинхронного расчета
 	const renderCalculationStatus = (): React.ReactNode => {
 		if (!currentOrder) return null
 
-		const isCompleted: boolean = currentOrder.status === 'завершен'
-		const isAsyncCalculated: boolean = currentOrder.async_calculated || false
-		const hasCalculations: boolean = !!(
-			currentOrder.med_calculations && currentOrder.med_calculations.length > 0
-		)
+		const { isCompleted, isAsyncCalculated, hasCalculations } =
+			checkAsyncCalculationStatus()
 
 		if (!isCompleted) return null
 
@@ -447,69 +520,46 @@ const PvlcMedCardPage: React.FC = () => {
 	): React.ReactNode => {
 		if (!currentOrder) return null
 
+		const { isCompleted, isAsyncCalculated } = checkAsyncCalculationStatus()
 		const hasResult: boolean = !!(calc.final_result && calc.final_result > 0)
-		const isAsyncCalculated: boolean = currentOrder.async_calculated || false
-		const isCompleted: boolean = currentOrder.status === 'завершен'
 
-		if (isCompleted && !isAsyncCalculated) {
-			// Расчет в процессе выполнения
-			return (
-				<div className='text-warning'>
-					<i className='fas fa-spinner fa-spin me-1'></i>
-					Расчет выполняется...
-				</div>
-			)
-		} else if (hasResult) {
-			// Результат рассчитан
+		// ==================== ИСПРАВЛЕННАЯ ЛОГИКА ОТОБРАЖЕНИЯ ====================
+		// 1. Если расчет завершен И async_calculated = true И есть результат
+		if (isCompleted && isAsyncCalculated && hasResult) {
 			return (
 				<div className='text-success'>
 					<strong>{calc.final_result?.toFixed(2) || '0.00'} л</strong>
-					{currentOrder.async_calculated && (
-						<Badge bg='info' className='ms-2' title='Асинхронный расчет [ЛР8]'>
-							Асинхр.
-						</Badge>
-					)}
+					<Badge bg='info' className='ms-2' title='Асинхронный расчет [ЛР8]'>
+						Асинхр.
+					</Badge>
 				</div>
 			)
-		} else if (isCompleted && isAsyncCalculated) {
-			// Расчет завершен, но результат не получен (ошибка)
+		}
+		// 2. Если расчет завершен И async_calculated = true НО нет результата
+		else if (isCompleted && isAsyncCalculated && !hasResult) {
 			return (
 				<div className='text-danger'>
 					<i className='fas fa-exclamation-triangle me-1'></i>
 					Ошибка расчета
 				</div>
 			)
-		} else {
-			// Расчет не выполнялся
+		}
+		// 3. Если расчет завершен НО async_calculated = false (в процессе)
+		else if (isCompleted && !isAsyncCalculated) {
+			return (
+				<div className='text-warning'>
+					<i className='fas fa-spinner fa-spin me-1'></i>
+					Расчет выполняется...
+				</div>
+			)
+		}
+		// 4. Если расчет не выполнялся или другая ситуация
+		else {
 			return <span className='text-muted'>не рассчитано</span>
 		}
 	}
 
-	// Получаем цвет бейджа для статуса
-	const getStatusBadgeColor = (status?: string): string => {
-		switch (status) {
-			case 'черновик':
-				return 'warning'
-			case 'сформирован':
-				return 'info'
-			case 'завершен':
-				return 'success'
-			case 'отклонен':
-				return 'danger'
-			default:
-				return 'secondary'
-		}
-	}
-
-	// Вспомогательная функция для безопасного получения ID формулы
-	const getFormulaId = (calc: DsMedMmPvlcCalculationResponse): number => {
-		return calc.pvlc_med_formula_id || 0
-	}
-
-	// Вспомогательная функция для безопасного получения ID заявки
-	const getCardId = (order: DsPvlcMedCardResponse): number => {
-		return order.id || 0
-	}
+	// ==================== СОСТОЯНИЯ ЗАГРУЗКИ И ОШИБОК ====================
 
 	// Состояние загрузки
 	if (loading) {
@@ -560,6 +610,8 @@ const PvlcMedCardPage: React.FC = () => {
 			</Container>
 		)
 	}
+
+	// ==================== РЕНДЕРИНГ КОМПОНЕНТА ====================
 
 	return (
 		<Container fluid className='px-0'>

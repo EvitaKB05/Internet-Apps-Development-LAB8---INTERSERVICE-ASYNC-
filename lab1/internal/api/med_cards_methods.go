@@ -229,14 +229,37 @@ func (a *API) GetPvlcMedCard(c *gin.Context) {
 		return
 	}
 
+	// ==================== ИСПРАВЛЕНИЕ: ПОЛУЧАЕМ РАСЧЕТЫ ИЗ РЕПОЗИТОРИЯ ====================
+	// Получаем расчеты для этой заявки
+	calculations, err := a.repo.GetMedMmPvlcCalculationsByCardID(card.ID)
+	if err != nil {
+		// Можно оставить пустой массив
+		calculations = []ds.MedMmPvlcCalculation{}
+		logrus.Errorf("Error getting calculations for card #%d: %v", card.ID, err)
+	}
+
 	response := ds.PvlcMedCardResponse{
 		ID:          card.ID,
 		Status:      card.Status,
 		CreatedAt:   card.CreatedAt,
-		UpdatedAt:   card.UpdatedAt, // ДОБАВИТЬ
+		UpdatedAt:   card.UpdatedAt,
 		PatientName: card.PatientName,
 		DoctorName:  card.DoctorName,
 		TotalResult: card.TotalResult,
+		// ==================== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ====================
+		CalculatedCount: card.CalculatedCount,
+		AsyncCalculated: card.AsyncCalculated,
+	}
+
+	// ==================== РАССЧИТЫВАЕМ ПРОГРЕСС ====================
+	if len(calculations) > 0 {
+		totalFormulas := len(calculations)
+		// Рассчитываем прогресс
+		progress := (float64(card.CalculatedCount) / float64(totalFormulas)) * 100
+		response.CalculationProgress = progress
+
+		logrus.Debugf("Заявка #%d: прогресс расчета = %.1f%% (%d/%d)",
+			card.ID, progress, card.CalculatedCount, totalFormulas)
 	}
 
 	if card.FinalizedAt != nil {
@@ -246,20 +269,19 @@ func (a *API) GetPvlcMedCard(c *gin.Context) {
 		response.CompletedAt = card.CompletedAt
 	}
 
-	// Получаем расчеты для этой заявки
-	calculations, err := a.repo.GetMedMmPvlcCalculationsByCardID(card.ID)
-	if err == nil {
-		for _, calc := range calculations {
-			response.MedCalculations = append(response.MedCalculations, ds.MedMmPvlcCalculationResponse{
-				PvlcMedFormulaID: calc.PvlcMedFormulaID,
-				Title:            calc.PvlcMedFormula.Title,
-				Description:      calc.PvlcMedFormula.Description,
-				Formula:          calc.PvlcMedFormula.Formula,
-				ImageURL:         calc.PvlcMedFormula.ImageURL,
-				InputHeight:      calc.InputHeight,
-				FinalResult:      calc.FinalResult,
-			})
-		}
+	// Добавляем медикалкулации в response
+	// ИСПРАВЛЕНО: гарантируем пустой массив вместо nil
+	response.MedCalculations = make([]ds.MedMmPvlcCalculationResponse, 0)
+	for _, calc := range calculations {
+		response.MedCalculations = append(response.MedCalculations, ds.MedMmPvlcCalculationResponse{
+			PvlcMedFormulaID: calc.PvlcMedFormulaID,
+			Title:            calc.PvlcMedFormula.Title,
+			Description:      calc.PvlcMedFormula.Description,
+			Formula:          calc.PvlcMedFormula.Formula,
+			ImageURL:         calc.PvlcMedFormula.ImageURL,
+			InputHeight:      calc.InputHeight,
+			FinalResult:      calc.FinalResult,
+		})
 	}
 
 	a.successResponse(c, response)
