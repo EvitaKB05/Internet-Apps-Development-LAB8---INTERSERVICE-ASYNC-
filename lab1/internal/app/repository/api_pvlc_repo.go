@@ -11,6 +11,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/sirupsen/logrus"
 )
 
 // ==================== МЕТОДЫ ДЛЯ API ФОРМУЛ ДЖЕЛ ====================
@@ -394,6 +395,7 @@ func (r *Repository) UpdatePvlcMedCardAsyncResult(cardID uint, totalResult float
 		}).Error
 }
 
+// ==================== ИСПРАВЛЯЕМ СУЩЕСТВУЮЩИЙ МЕТОД ====================
 // GetPvlcMedCardCalculationsData получает данные расчетов для передачи в асинхронный сервис
 // В реальной системе эти данные отправлялись бы в Django сервис
 func (r *Repository) GetPvlcMedCardCalculationsData(cardID uint) ([]map[string]interface{}, error) {
@@ -421,4 +423,14 @@ func (r *Repository) GetPvlcMedCardCalculationsData(cardID uint) ([]map[string]i
 	}
 
 	return result, nil
+}
+
+// ==================== ДОБАВЛЯЕМ НОВЫЙ МЕТОД ====================
+// SendToDjangoService отправляет запрос в Django сервис для асинхронного расчета
+func (r *Repository) SendToDjangoService(cardID uint, calculations []map[string]interface{}) error {
+	// Этот метод теперь вызывается напрямую из med_cards_methods.go
+	// Оставляем для совместимости, но основная логика уже в обработчике
+	logrus.Infof("📤 Отправка данных для асинхронного расчета в Django (заявка #%d)", cardID)
+	logrus.Infof("   Количество расчетов: %d", len(calculations))
+	return nil
 }

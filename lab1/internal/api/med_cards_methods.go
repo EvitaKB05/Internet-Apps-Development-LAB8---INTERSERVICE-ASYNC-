@@ -2,6 +2,10 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+
 	"lab1/internal/app/ds"
 	"lab1/internal/auth"
 	"net/http"
@@ -460,7 +464,7 @@ func (a *API) CompletePvlcMedCard(c *gin.Context) {
 		// Меняем статус на "завершен"
 		card.Status = ds.PvlcMedCardStatusCompleted
 
-		// ==================== ИЗМЕНЕНИЕ ДЛЯ ЛАБОРАТОРНОЙ №8 ====================
+		// ==================== ИСПРАВЛЕНИЕ ДЛЯ ЛАБОРАТОРНОЙ №8 ====================
 		// Вместо синхронного расчета ДЖЕЛ, запускаем асинхронный
 
 		logrus.Infof("🚀 Запуск асинхронного расчета ДЖЕЛ для заявки #%d", card.ID)
@@ -477,6 +481,53 @@ func (a *API) CompletePvlcMedCard(c *gin.Context) {
 			a.errorResponse(c, http.StatusInternalServerError, "Ошибка подготовки асинхронного расчета")
 			return
 		}
+
+		// ==================== ВАЖНОЕ ИСПРАВЛЕНИЕ: ВЫЗОВ DJANGO СЕРВИСА ====================
+		// Запускаем асинхронный вызов Django сервиса в горутине
+		go func() {
+			// 1. Получаем данные расчетов для заявки
+			calculationsData, err := a.repo.GetPvlcMedCardCalculationsData(card.ID)
+			if err != nil {
+				logrus.Errorf("❌ Ошибка получения данных расчетов для заявки #%d: %v", card.ID, err)
+				return
+			}
+
+			// 2. Формируем запрос для Django
+			djangoRequest := map[string]interface{}{
+				"card_id":      card.ID,
+				"calculations": calculationsData,
+			}
+
+			// 3. Отправляем запрос в Django сервис
+			jsonData, err := json.Marshal(djangoRequest)
+			if err != nil {
+				logrus.Errorf("❌ Ошибка сериализации JSON для Django: %v", err)
+				return
+			}
+
+			// Django сервис работает на порту 8001
+			djangoURL := "http://localhost:8001/api/async-calculate/"
+
+			logrus.Infof("📤 Отправка запроса в Django сервис: %s", djangoURL)
+			logrus.Infof("   Данные: %s", string(jsonData))
+
+			resp, err := http.Post(djangoURL, "application/json", bytes.NewBuffer(jsonData))
+			if err != nil {
+				logrus.Errorf("❌ Ошибка отправки в Django сервис: %v", err)
+				return
+			}
+			defer resp.Body.Close()
+
+			body, _ := io.ReadAll(resp.Body)
+			logrus.Infof("📥 Ответ от Django сервиса: статус %d, тело: %s", resp.StatusCode, string(body))
+
+			if resp.StatusCode != http.StatusOK {
+				logrus.Errorf("❌ Django сервис вернул ошибку: статус %d", resp.StatusCode)
+			} else {
+				logrus.Infof("✅ Django сервис успешно принял заявку на расчет для заявки #%d", card.ID)
+			}
+		}()
+		// ==================== КОНЕЦ ИСПРАВЛЕНИЯ ====================
 
 	} else if request.Action == "reject" {
 		// Просто отклоняем заявку
@@ -510,6 +561,11 @@ func (a *API) CompletePvlcMedCard(c *gin.Context) {
 		responseData["note"] = "Расчет ДЖЕЛ выполняется асинхронно. Обновите страницу через 5-10 секунд."
 		responseData["total_result"] = 0
 		responseData["calculated_count"] = 0
+
+		// ==================== ДОБАВЛЯЕМ ИНФОРМАЦИЮ О DJANGO ====================
+		responseData["django_service"] = "Запрос отправлен в Django сервис"
+		responseData["django_url"] = "http://localhost:8001/api/async-calculate/"
+		responseData["calculation_time"] = "5-10 секунд"
 	}
 
 	a.successResponse(c, responseData)

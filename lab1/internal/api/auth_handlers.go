@@ -1,3 +1,4 @@
+// internal/api/auth_handlers.go
 package api
 
 import (
