@@ -111,6 +111,10 @@ func StartServer() {
 			public.GET("/pvlc-med-formulas/:id", api.GetPvlcMedFormula) // Конкретная формула
 			public.POST("/med-users/register", api.RegisterMedUser)
 			public.GET("/med_card/icon", api.GetCartIcon) // Регистрация пользователя
+			// ==================== ДОБАВЛЯЕМ НОВЫЙ МАРШРУТ ====================
+			// Для Django сервиса (без авторизации, только по ключу)
+			// Django будет отправлять результаты расчета сюда
+			public.PUT("/pvlc-med-cards/:id/async-result", api.UpdatePvlcMedCardAsyncResult)
 		}
 
 		// Auth required routes (требуют аутентификации)

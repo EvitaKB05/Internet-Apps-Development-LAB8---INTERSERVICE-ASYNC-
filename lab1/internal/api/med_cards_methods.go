@@ -125,8 +125,26 @@ func (a *API) GetPvlcMedCards(c *gin.Context) {
 			PatientName: card.PatientName,
 			DoctorName:  card.DoctorName,
 			TotalResult: card.TotalResult,
-		}
 
+			// ==================== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ====================
+			// Для отображения прогресса асинхронных вычислений
+			CalculatedCount: card.CalculatedCount,
+			AsyncCalculated: card.AsyncCalculated,
+		}
+		// ==================== РАССЧИТЫВАЕМ ПРОГРЕСС ====================
+		// Прогресс вычислений в процентах
+		// calculated_count / общее_количество_формул * 100
+
+		// В Go len() для nil slices возвращает 0, поэтому проверка на nil не нужна
+		if len(card.Calculations) > 0 {
+			totalFormulas := len(card.Calculations)
+			// Рассчитываем прогресс
+			progress := (float64(card.CalculatedCount) / float64(totalFormulas)) * 100
+			cardResponse.CalculationProgress = progress
+
+			logrus.Debugf("Заявка #%d: прогресс расчета = %.1f%% (%d/%d)",
+				card.ID, progress, card.CalculatedCount, totalFormulas)
+		}
 		if card.FinalizedAt != nil {
 			cardResponse.FinalizedAt = card.FinalizedAt
 		}
@@ -392,6 +410,7 @@ func (a *API) FinalizePvlcMedCard(c *gin.Context) {
 // CompletePvlcMedCard godoc
 // @Summary Завершение/отклонение заявки
 // @Description Завершает или отклоняет заявку (только для модераторов)
+// @Description При завершении запускает асинхронный расчет ДЖЕЛ в Django сервисе
 // @Tags medical-cards
 // @Accept json
 // @Produce json
@@ -418,7 +437,6 @@ func (a *API) CompletePvlcMedCard(c *gin.Context) {
 		return
 	}
 
-	// ИСПРАВЛЕНО: используем именованную структуру вместо встроенной
 	var request ds.CompletePvlcMedCardRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		a.errorResponse(c, http.StatusBadRequest, "Неверные данные запроса")
@@ -439,37 +457,62 @@ func (a *API) CompletePvlcMedCard(c *gin.Context) {
 
 	now := time.Now()
 	if request.Action == "complete" {
+		// Меняем статус на "завершен"
 		card.Status = ds.PvlcMedCardStatusCompleted
 
-		// ВЫЧИСЛЕНИЕ ДЖЕЛ - реализуем формулу из лабораторной 2
-		totalResult, err := a.repo.CalculateTotalDjel(card.ID)
-		if err != nil {
-			logrus.Error("Error calculating DJEL: ", err)
-			a.errorResponse(c, http.StatusInternalServerError, "Ошибка расчета ДЖЕЛ")
+		// ==================== ИЗМЕНЕНИЕ ДЛЯ ЛАБОРАТОРНОЙ №8 ====================
+		// Вместо синхронного расчета ДЖЕЛ, запускаем асинхронный
+
+		logrus.Infof("🚀 Запуск асинхронного расчета ДЖЕЛ для заявки #%d", card.ID)
+		logrus.Infof("   Модератор: %s (ID: %d)", claims.Login, claims.UserID)
+
+		// Устанавливаем начальные значения для отслеживания прогресса
+		card.TotalResult = 0
+		card.CalculatedCount = 0
+		card.AsyncCalculated = false
+
+		// Важно: нужно сохранить изменения ДО отправки в Django
+		if err := a.repo.UpdatePvlcMedCard(&card); err != nil {
+			logrus.Error("Error updating card for async calculation: ", err)
+			a.errorResponse(c, http.StatusInternalServerError, "Ошибка подготовки асинхронного расчета")
 			return
 		}
-		card.TotalResult = totalResult
+
 	} else if request.Action == "reject" {
+		// Просто отклоняем заявку
 		card.Status = ds.PvlcMedCardStatusRejected
+		logrus.Infof("📛 Заявка #%d отклонена модератором %s", card.ID, claims.Login)
 	} else {
 		a.errorResponse(c, http.StatusBadRequest, "Неверное действие. Используйте 'complete' или 'reject'")
 		return
 	}
 
+	// Устанавливаем дату завершения и ID модератора
 	card.CompletedAt = &now
-	card.ModeratorID = &claims.UserID // Сохраняем ID модератора
+	card.ModeratorID = &claims.UserID
 
+	// Сохраняем изменения в БД
 	if err := a.repo.UpdatePvlcMedCard(&card); err != nil {
 		logrus.Error("Error completing pvlc med card: ", err)
 		a.errorResponse(c, http.StatusInternalServerError, "Ошибка завершения заявки")
 		return
 	}
 
-	a.successResponse(c, gin.H{
-		"message":      "Заявка успешно обработана",
-		"status":       card.Status,
-		"total_result": card.TotalResult,
-	})
+	// Возвращаем ответ
+	responseData := gin.H{
+		"message": "Заявка успешно обработана",
+		"status":  card.Status,
+	}
+
+	// Если завершаем - добавляем информацию об асинхронном расчете
+	if request.Action == "complete" {
+		responseData["async_calc"] = true
+		responseData["note"] = "Расчет ДЖЕЛ выполняется асинхронно. Обновите страницу через 5-10 секунд."
+		responseData["total_result"] = 0
+		responseData["calculated_count"] = 0
+	}
+
+	a.successResponse(c, responseData)
 }
 
 // DeletePvlcMedCard godoc

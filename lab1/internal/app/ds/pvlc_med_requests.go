@@ -92,3 +92,18 @@ type LogoutMedUserRequest struct {
 type CheckPvlcMedCardExistsRequest struct {
 	CardID uint `json:"card_id" binding:"required"`
 }
+
+// ==================== ДОБАВЛЯЕМ НОВУЮ СТРУКТУРУ ====================
+// Для вызова Django сервиса (необязательно, но полезно)
+
+type AsyncCalculationRequest struct {
+	CardID       uint              `json:"card_id" binding:"required"`
+	Calculations []CalculationData `json:"calculations"`
+}
+
+type CalculationData struct {
+	FormulaID   uint    `json:"formula_id"`
+	Formula     string  `json:"formula"`
+	InputHeight float64 `json:"input_height"`
+	Title       string  `json:"title"`
+}

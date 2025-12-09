@@ -377,3 +377,48 @@ func (r *Repository) InitMinIOBucket() error {
 	}
 	return nil
 }
+
+// ==================== НОВЫЕ МЕТОДЫ ДЛЯ АСИНХРОННЫХ ВЫЧИСЛЕНИЙ ====================
+
+// UpdatePvlcMedCardAsyncResult обновляет результаты асинхронного расчета
+// Вызывается когда Django сервис присылает результаты расчета ДЖЕЛ
+func (r *Repository) UpdatePvlcMedCardAsyncResult(cardID uint, totalResult float64, calculatedCount int) error {
+	// Обновляем заявку в базе данных
+	return r.db.Model(&ds.PvlcMedCard{}).
+		Where("id = ?", cardID).
+		Updates(map[string]interface{}{
+			"total_result":     totalResult,
+			"calculated_count": calculatedCount,
+			"async_calculated": true,
+			"updated_at":       time.Now(), // Обновляем время изменения
+		}).Error
+}
+
+// GetPvlcMedCardCalculationsData получает данные расчетов для передачи в асинхронный сервис
+// В реальной системе эти данные отправлялись бы в Django сервис
+func (r *Repository) GetPvlcMedCardCalculationsData(cardID uint) ([]map[string]interface{}, error) {
+	// Получаем все расчеты для этой заявки
+	var calculations []ds.MedMmPvlcCalculation
+	err := r.db.Where("pvlc_med_card_id = ?", cardID).
+		Preload("PvlcMedFormula"). // Загружаем связанные формулы
+		Find(&calculations).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Преобразуем в удобный формат для отправки
+	var result []map[string]interface{}
+	for _, calc := range calculations {
+		result = append(result, map[string]interface{}{
+			"formula_id":   calc.PvlcMedFormulaID,
+			"formula":      calc.PvlcMedFormula.Formula,
+			"input_height": calc.InputHeight,
+			"title":        calc.PvlcMedFormula.Title,
+			"category":     calc.PvlcMedFormula.Category,
+			"gender":       calc.PvlcMedFormula.Gender,
+		})
+	}
+
+	return result, nil
+}
