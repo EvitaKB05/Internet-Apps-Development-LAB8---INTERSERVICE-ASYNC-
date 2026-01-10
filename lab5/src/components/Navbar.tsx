@@ -1,9 +1,9 @@
 //src/components/Navbar.tsx
-import React, { useEffect } from 'react'
+import React from 'react' // вместо import React, { useEffect } from 'react'
 import { Navbar, Nav, Container, Button } from 'react-bootstrap'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../hooks/redux'
-import { logoutUser, getProfile } from '../store/slices/authSlice'
+import { logoutUser } from '../store/slices/authSlice' // вместо { logoutUser, getProfile }
 import { resetCart } from '../store/slices/cartSlice'
 import { resetFilters } from '../store/slices/filterSlice'
 
@@ -13,16 +13,16 @@ const CustomNavbar: React.FC = () => {
 	const dispatch = useAppDispatch()
 
 	// Получаем состояние из Redux
-	const { isAuthenticated, user, loading } = useAppSelector(state => state.auth)
+	const { isAuthenticated, user } = useAppSelector(state => state.auth)
 
-	// При монтировании проверяем токен и загружаем профиль
-	useEffect(() => {
-		const token = localStorage.getItem('token')
-		if (token && !isAuthenticated && !loading) {
-			console.log('Token found, loading profile...')
-			dispatch(getProfile())
-		}
-	}, [dispatch, isAuthenticated, loading])
+	// // При монтировании проверяем токен и загружаем профиль
+	// useEffect(() => {
+	// 	const token = localStorage.getItem('token')
+	// 	if (token && !isAuthenticated && !loading) {
+	// 		console.log('Token found, loading profile...')
+	// 		dispatch(getProfile())
+	// 	}
+	// }, [dispatch, isAuthenticated, loading])
 
 	const handleLogout = async () => {
 		await dispatch(logoutUser())

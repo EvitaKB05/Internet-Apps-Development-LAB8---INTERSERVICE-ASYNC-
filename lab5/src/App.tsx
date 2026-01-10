@@ -3,7 +3,7 @@ import React, { useEffect } from 'react'
 import { HashRouter as Router, Routes, Route } from 'react-router-dom'
 import { Container } from 'react-bootstrap'
 import { useAppDispatch } from './hooks/redux'
-import { resetAuth } from './store/slices/authSlice'
+import { checkTokenOnRefresh } from './store/slices/authSlice' // ИЗМЕНЕНО: checkTokenOnRefresh вместо resetAuth
 import CustomNavbar from './components/Navbar'
 import HomePage from './pages/HomePage'
 import PvlcPatientsPage from './pages/PvlcPatientsPage'
@@ -19,9 +19,10 @@ import './App.css'
 const App: React.FC = () => {
 	const dispatch = useAppDispatch()
 
-	// ИСПРАВЛЕНИЕ: Сбрасываем аутентификацию при загрузке приложения (F5 reset)
+	// ИСПРАВЛЕНИЕ: Проверяем токен при загрузке приложения (F5 reset)
+	// Теперь при F5 пользователь становится гостем, но токен остается в localStorage
 	useEffect(() => {
-		dispatch(resetAuth())
+		dispatch(checkTokenOnRefresh())
 	}, [dispatch])
 
 	return (
