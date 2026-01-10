@@ -293,8 +293,8 @@ const PvlcMedCardsPage: React.FC = () => {
 					{/* ==================== ДОБАВЛЯЕМ ИНДИКАТОР SHORT POLLING ДЛЯ ЛР8 ==================== */}
 					{isPolling && (
 						<div className='text-muted small mt-2'>
-							<i className='fas fa-sync-alt fa-spin me-1'></i>
-							[ЛР8] Автообновление каждые 3 секунды (short polling)
+							{/* <i className='fas fa-sync-alt fa-spin me-1'></i>
+							[ЛР8] Автообновление каждые 3 секунды (short polling) */}
 						</div>
 					)}
 				</Container>

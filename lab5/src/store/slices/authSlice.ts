@@ -39,8 +39,7 @@ interface LogoutRequestBody {
 	token: string
 }
 
-// Начальное состояние - ВСЕГДА пустое при загрузке приложения (F5 reset)
-// ИСПРАВЛЕНИЕ: Не восстанавливаем из localStorage при инициализации
+// Начальное состояние
 const initialState: AuthState = {
 	user: null,
 	isAuthenticated: false,
@@ -50,25 +49,28 @@ const initialState: AuthState = {
 	passwordChangeError: null,
 }
 
-// ==================== НОВЫЙ КОД: СОХРАНЯЕМ ТОКЕН ПРИ F5, НО СБРАСЫВАЕМ СОСТОЯНИЕ ====================
-// При F5: оставляем токен в localStorage, но сбрасываем Redux состояние
+// ==================== НОВЫЙ КОД: ПРИ F5 УДАЛЯЕМ ПОЛЬЗОВАТЕЛЯ, ОСТАВЛЯЕМ ТОКЕН ====================
+// При загрузке приложения (F5): удаляем пользователя из localStorage, оставляем токен
 if (typeof window !== 'undefined') {
 	const token = localStorage.getItem('token')
 	const userStr = localStorage.getItem('user')
 
 	if (token && userStr) {
+		// Удаляем пользователя, оставляем только токен
+		localStorage.removeItem('user')
+		console.log('✅ F5: Токен сохранен, пользователь удален из localStorage')
+		console.log('   Токен:', token.substring(0, 20) + '...')
+	} else if (token) {
 		console.log(
-			'✅ F5: Токен сохранен в localStorage:',
+			'✅ F5: Только токен в localStorage:',
 			token.substring(0, 20) + '...'
 		)
-		console.log(
-			'✅ F5: Пользователь сохранен в localStorage, но Redux состояние сброшено'
-		)
-		// НЕ восстанавливаем состояние из localStorage - пользователь становится гостем
-		// localStorage.removeItem('token') // НЕ удаляем!
-		// localStorage.removeItem('user')  // НЕ удаляем!
+	} else if (userStr) {
+		// Если есть пользователь без токена - удаляем всё
+		localStorage.removeItem('user')
+		console.log('⚠️ F5: Удален пользователь без токена')
 	} else {
-		console.log('ℹ️ F5: Нет сохраненных данных в localStorage')
+		console.log('ℹ️ F5: Нет данных в localStorage')
 	}
 }
 // ==================== КОНЕЦ НОВОГО КОДА ====================
@@ -161,11 +163,11 @@ export const logoutUser = createAsyncThunk(
 				console.log('✅ Logout request sent (no token)')
 			}
 
-			// Всегда очищаем localStorage при выходе
+			// Всегда очищаем localStorage при выходе (и токен, и пользователя)
 			localStorage.removeItem('token')
 			localStorage.removeItem('user')
 
-			console.log('✅ Logout successful, localStorage cleared')
+			console.log('✅ Logout successful, localStorage cleared (token + user)')
 			return true
 		} catch (error: unknown) {
 			// ИСПРАВЛЕНИЕ: Даже при ошибке API очищаем localStorage
@@ -223,7 +225,7 @@ export const getProfile = createAsyncThunk(
 
 			console.log('Profile data:', profileData)
 
-			// Сохраняем профиль в localStorage
+			// Сохраняем профиль в localStorage (восстанавливаем после F5)
 			localStorage.setItem('user', JSON.stringify(profileData))
 			console.log('✅ Profile saved to localStorage')
 
@@ -290,7 +292,7 @@ export const changePassword = createAsyncThunk(
 // Создаем слайс
 const authSlice = createSlice({
 	name: 'auth',
-	initialState: initialState, // Используем чистый initialState (без восстановления)
+	initialState: initialState,
 	reducers: {
 		// Редьюсер для очистки ошибки
 		clearError: state => {
@@ -304,29 +306,29 @@ const authSlice = createSlice({
 		forceLogout: state => {
 			state.user = null
 			state.isAuthenticated = false
-			// ==================== ИЗМЕНЕНО: НЕ очищаем localStorage при forceLogout? ====================
-			// localStorage.removeItem('token')  // ЗАКОММЕНТИРОВАТЬ если нужно сохранить токен
-			// localStorage.removeItem('user')   // ЗАКОММЕНТИРОВАТЬ если нужно сохранить токен
-			console.log('Force logout executed (Redux only)')
+			// Удаляем всё из localStorage при принудительном выходе
+			localStorage.removeItem('token')
+			localStorage.removeItem('user')
+			console.log('Force logout executed - localStorage cleared')
 		},
-		// ИСПРАВЛЕНИЕ: Добавляем ресет для F5
-		resetAuth: () => {
-			// Сбрасываем только Redux состояние, localStorage остается
-			console.log('Auth reset for F5 - только состояние Redux сброшено')
+		// Редьюсер для F5 reset
+		resetAuthForF5: () => {
+			// Удаляем только пользователя, токен оставляем
+			localStorage.removeItem('user')
+			console.log('F5: Пользователь удален из localStorage, токен сохранен')
 			return initialState
 		},
-		// ==================== НОВЫЙ РЕДЬЮСЕР: Проверка токена при F5 ====================
+		// Проверка токена при F5
 		checkTokenOnRefresh: state => {
-			// Проверяем есть ли токен в localStorage после F5
 			const token = localStorage.getItem('token')
-			const userStr = localStorage.getItem('user')
 
-			if (token && userStr) {
-				console.log(
-					'🔄 F5: Токен найден в localStorage, но пользователь не авторизован в Redux'
-				)
-				// Можно добавить логику автоматического восстановления если нужно
-				// Но по требованию: пользователь остается гостем
+			if (token) {
+				console.log('🔄 F5: Токен найден в localStorage, пользователь - гость')
+				// Если есть пользователь - удаляем (на всякий случай)
+				if (localStorage.getItem('user')) {
+					localStorage.removeItem('user')
+					console.log('   Удален пользователь из localStorage')
+				}
 			}
 			return state
 		},
@@ -434,8 +436,8 @@ export const {
 	clearError,
 	clearPasswordChangeError,
 	forceLogout,
-	resetAuth,
-	checkTokenOnRefresh, // НОВЫЙ экспорт
+	resetAuthForF5,
+	checkTokenOnRefresh,
 } = authSlice.actions
 
 export default authSlice.reducer

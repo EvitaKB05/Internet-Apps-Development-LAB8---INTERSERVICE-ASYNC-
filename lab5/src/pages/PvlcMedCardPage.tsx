@@ -42,12 +42,12 @@ interface HeightValues {
 	[formulaId: number]: number
 }
 
-// Тип для прогресса расчета
-interface CalculationProgress {
-	calculated: number
-	total: number
-	percent: number
-}
+// // Тип для прогресса расчета
+// interface CalculationProgress {
+// 	calculated: number
+// 	total: number
+// 	percent: number
+// }
 
 // Типы для локального состояния формы
 interface FormData {
@@ -80,9 +80,9 @@ const PvlcMedCardPage: React.FC = () => {
 	const [heightValues, setHeightValues] = useState<HeightValues>({})
 	const [heightSaved, setHeightSaved] = useState<HeightSaveState>({})
 
-	// Состояние для отслеживания прогресса расчета
-	const [calculationProgress, setCalculationProgress] =
-		useState<CalculationProgress | null>(null)
+	// // Состояние для отслеживания прогресса расчета
+	// const [calculationProgress, setCalculationProgress] =
+	// 	useState<CalculationProgress | null>(null)
 
 	// Проверяем, является ли заявка черновиком
 	const isDraft = currentOrder?.status === 'черновик'
@@ -161,29 +161,29 @@ const PvlcMedCardPage: React.FC = () => {
 			setHeightSaved(initialSaved)
 
 			// ==================== ИСПРАВЛЕННЫЙ РАСЧЕТ ПРОГРЕССА ====================
-			const { isCompleted, isAsyncCalculated } = checkAsyncCalculationStatus()
+			// const { isCompleted, isAsyncCalculated } = checkAsyncCalculationStatus()
 
-			if (isCompleted && currentOrder.med_calculations) {
-				const totalCalculations: number = currentOrder.med_calculations.length
-				const calculatedCount: number = currentOrder.calculated_count || 0
+			// if (isCompleted && currentOrder.med_calculations) {
+			// 	const totalCalculations: number = currentOrder.med_calculations.length
+			// 	const calculatedCount: number = currentOrder.calculated_count || 0
 
-				// Для асинхронного расчета показываем прогресс только если async_calculated = true
-				if (isAsyncCalculated) {
-					setCalculationProgress({
-						calculated: calculatedCount,
-						total: totalCalculations,
-						percent:
-							totalCalculations > 0
-								? (calculatedCount / totalCalculations) * 100
-								: 0,
-					})
-				} else {
-					// Для расчета в процессе не показываем прогресс
-					setCalculationProgress(null)
-				}
-			} else {
-				setCalculationProgress(null)
-			}
+			// 	// Для асинхронного расчета показываем прогресс только если async_calculated = true
+			// 	if (isAsyncCalculated) {
+			// 		setCalculationProgress({
+			// 			calculated: calculatedCount,
+			// 			total: totalCalculations,
+			// 			percent:
+			// 				totalCalculations > 0
+			// 					? (calculatedCount / totalCalculations) * 100
+			// 					: 0,
+			// 		})
+			// 	} else {
+			// 		// Для расчета в процессе не показываем прогресс
+			// 		setCalculationProgress(null)
+			// 	}
+			// } else {
+			// 	setCalculationProgress(null)
+			// }
 		}
 	}, [currentOrder, checkAsyncCalculationStatus])
 
@@ -448,71 +448,71 @@ const PvlcMedCardPage: React.FC = () => {
 
 	// ==================== ФУНКЦИИ ОТОБРАЖЕНИЯ ====================
 
-	// Функция для отображения статуса асинхронного расчета
-	const renderCalculationStatus = (): React.ReactNode => {
-		if (!currentOrder) return null
+	// // Функция для отображения статуса асинхронного расчета
+	// const renderCalculationStatus = (): React.ReactNode => {
+	// 	if (!currentOrder) return null
 
-		const { isCompleted, isAsyncCalculated, hasCalculations } =
-			checkAsyncCalculationStatus()
+	// 	const { isCompleted, isAsyncCalculated, hasCalculations } =
+	// 		checkAsyncCalculationStatus()
 
-		if (!isCompleted) return null
+	// 	if (!isCompleted) return null
 
-		if (isAsyncCalculated && calculationProgress) {
-			return (
-				<Alert variant='success' className='mt-3'>
-					<h5>
-						<i className='fas fa-check-circle me-2'></i>
-						Асинхронный расчет ДЖЕЛ завершен [ЛР8]
-					</h5>
-					<p className='mb-1'>
-						<strong>Общий результат:</strong>{' '}
-						{currentOrder.total_result?.toFixed(2) || '0.00'} л
-					</p>
-					<p className='mb-1'>
-						<strong>Рассчитано пациентов:</strong>{' '}
-						{calculationProgress.calculated} из {calculationProgress.total}
-					</p>
-					{calculationProgress.percent > 0 && (
-						<div className='mt-2'>
-							<div className='progress' style={{ height: '20px' }}>
-								<div
-									className='progress-bar progress-bar-striped progress-bar-animated'
-									role='progressbar'
-									style={{ width: `${calculationProgress.percent}%` }}
-									aria-valuenow={calculationProgress.percent}
-									aria-valuemin={0}
-									aria-valuemax={100}
-								>
-									{calculationProgress.percent.toFixed(0)}%
-								</div>
-							</div>
-							<small className='text-muted'>
-								Прогресс асинхронного расчета (short polling)
-							</small>
-						</div>
-					)}
-				</Alert>
-			)
-		} else if (isCompleted && !isAsyncCalculated && hasCalculations) {
-			return (
-				<Alert variant='warning' className='mt-3'>
-					<h5>
-						<i className='fas fa-spinner fa-spin me-2'></i>
-						Асинхронный расчет ДЖЕЛ выполняется [ЛР8]
-					</h5>
-					<p className='mb-0'>
-						Расчет выполняется в фоновом режиме через Django сервис. Обновите
-						страницу через 5-10 секунд для получения результатов.
-					</p>
-					<small className='text-muted'>
-						Используется short polling для автоматического обновления
-					</small>
-				</Alert>
-			)
-		}
+	// 	if (isAsyncCalculated && calculationProgress) {
+	// 		return (
+	// 			<Alert variant='success' className='mt-3'>
+	// 				<h5>
+	// 					<i className='fas fa-check-circle me-2'></i>
+	// 					Асинхронный расчет ДЖЕЛ завершен [ЛР8]
+	// 				</h5>
+	// 				<p className='mb-1'>
+	// 					<strong>Общий результат:</strong>{' '}
+	// 					{currentOrder.total_result?.toFixed(2) || '0.00'} л
+	// 				</p>
+	// 				<p className='mb-1'>
+	// 					<strong>Рассчитано пациентов:</strong>{' '}
+	// 					{calculationProgress.calculated} из {calculationProgress.total}
+	// 				</p>
+	// 				{calculationProgress.percent > 0 && (
+	// 					<div className='mt-2'>
+	// 						<div className='progress' style={{ height: '20px' }}>
+	// 							<div
+	// 								className='progress-bar progress-bar-striped progress-bar-animated'
+	// 								role='progressbar'
+	// 								style={{ width: `${calculationProgress.percent}%` }}
+	// 								aria-valuenow={calculationProgress.percent}
+	// 								aria-valuemin={0}
+	// 								aria-valuemax={100}
+	// 							>
+	// 								{calculationProgress.percent.toFixed(0)}%
+	// 							</div>
+	// 						</div>
+	// 						<small className='text-muted'>
+	// 							Прогресс асинхронного расчета (short polling)
+	// 						</small>
+	// 					</div>
+	// 				)}
+	// 			</Alert>
+	// 		)
+	// 	} else if (isCompleted && !isAsyncCalculated && hasCalculations) {
+	// 		return (
+	// 			<Alert variant='warning' className='mt-3'>
+	// 				<h5>
+	// 					<i className='fas fa-spinner fa-spin me-2'></i>
+	// 					Асинхронный расчет ДЖЕЛ выполняется [ЛР8]
+	// 				</h5>
+	// 				<p className='mb-0'>
+	// 					Расчет выполняется в фоновом режиме через Django сервис. Обновите
+	// 					страницу через 5-10 секунд для получения результатов.
+	// 				</p>
+	// 				<small className='text-muted'>
+	// 					Используется short polling для автоматического обновления
+	// 				</small>
+	// 			</Alert>
+	// 		)
+	// 	}
 
-		return null
-	}
+	// 	return null
+	// }
 
 	// Функция для отображения результата расчета
 	const renderCalculationResult = (
@@ -529,9 +529,9 @@ const PvlcMedCardPage: React.FC = () => {
 			return (
 				<div className='text-success'>
 					<strong>{calc.final_result?.toFixed(2) || '0.00'} л</strong>
-					<Badge bg='info' className='ms-2' title='Асинхронный расчет [ЛР8]'>
+					{/* <Badge bg='info' className='ms-2' title='Асинхронный расчет [ЛР8]'>
 						Асинхр.
-					</Badge>
+					</Badge> */}
 				</div>
 			)
 		}
@@ -649,9 +649,7 @@ const PvlcMedCardPage: React.FC = () => {
 													<span
 														className='ms-1'
 														title='Асинхронный расчет [ЛР8]'
-													>
-														⚡
-													</span>
+													></span>
 												)}
 											</Badge>
 										</div>
@@ -664,7 +662,7 @@ const PvlcMedCardPage: React.FC = () => {
 											<strong>
 												{currentOrder.total_result?.toFixed(2) || '0.00'} л
 											</strong>
-											{currentOrder.async_calculated && (
+											{/* {currentOrder.async_calculated && (
 												<Badge
 													bg='info'
 													className='ms-2'
@@ -672,7 +670,7 @@ const PvlcMedCardPage: React.FC = () => {
 												>
 													Асинхр.
 												</Badge>
-											)}
+											)} */}
 										</div>
 									</Form.Group>
 								</Col>
@@ -702,7 +700,7 @@ const PvlcMedCardPage: React.FC = () => {
 							</Row>
 
 							{/* Статус асинхронного расчета */}
-							{renderCalculationStatus()}
+							{/* {renderCalculationStatus()} */}
 
 							<Row>
 								<Col md={6}>
