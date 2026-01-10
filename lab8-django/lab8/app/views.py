@@ -20,7 +20,7 @@ from concurrent import futures  # для асинхронных задач (фо
 
 # Адрес Go сервиса для обратного вызова
 # {id} заменится на ID заявки
-CALLBACK_URL = "http://localhost:8080/api/pvlc-med-cards/"
+CALLBACK_URL = "http://127.0.0.1:8080/api/pvlc-med-cards/"
 
 # Ключ для авторизации (должен совпадать с ключом в Go сервисе)
 ASYNC_API_KEY = "lab8key12345678"
@@ -289,10 +289,73 @@ def calculation_callback(task):
             
     except requests.exceptions.Timeout:
         print("❌ Django сервис: Таймаут при отправке в Go сервис (15 секунд)")
+        
+        # ==================== ДОБАВЛЕН ОТЛАДОЧНЫЙ КОД (Вариант 5) ====================
+        print("🔄 Пробуем альтернативные URL...")
+        
     except requests.exceptions.ConnectionError:
         print("❌ Django сервис: Не удалось подключиться к Go сервису")
+        
+        # ==================== ДОБАВЛЕН ОТЛАДОЧНЫЙ КОД (Вариант 5) ====================
+        # ПОПРОБУЕМ ВСЕ ВОЗМОЖНЫЕ АДРЕСА
+        print("🔄 Пробуем альтернативные URL для подключения к Go...")
+        
+        urls_to_try = [
+            f"http://127.0.0.1:8080/api/pvlc-med-cards/{result['id']}/async-result",
+            f"http://0.0.0.0:8080/api/pvlc-med-cards/{result['id']}/async-result",
+            f"http://localhost:8080/api/pvlc-med-cards/{result['id']}/async-result",
+            f"http://[::1]:8080/api/pvlc-med-cards/{result['id']}/async-result",
+        ]
+        
+        for url in urls_to_try:
+            print(f"   Пробуем URL: {url}")
+            try:
+                response = requests.put(url, json=data_to_send, timeout=5)
+                print(f"   ✅ Успешно! Статус: {response.status_code}")
+                
+                if response.status_code == 200:
+                    try:
+                        response_data = response.json()
+                        print(f"   Ответ Go сервиса: {json.dumps(response_data, indent=2)}")
+                    except:
+                        print(f"   Текст ответа: {response.text[:200]}...")
+                return  # Успешно отправили, выходим
+            except requests.exceptions.ConnectionError as e2:
+                print(f"   ❌ Не удалось подключиться: {e2}")
+            except Exception as e2:
+                print(f"   ❌ Ошибка: {e2}")
+        
+        # Если ни один URL не сработал
+        print("❌ Все URL не сработали. Сохраняем данные для ручной отправки...")
+        
+        # Сохраняем данные в файл
+        import json
+        filename = f'manual_update_card_{result["id"]}.json'
+        with open(filename, 'w') as f:
+            json.dump(data_to_send, f, indent=2)
+        
+        print(f"✅ Данные сохранены в файл: {filename}")
+        print("🔧 Выполните команду вручную:")
+        print(f'curl -X PUT "http://localhost:8080/api/pvlc-med-cards/{result["id"]}/async-result" ^')
+        print(f'  -H "Content-Type: application/json" ^')
+        # Исправляем синтаксическую ошибку в f-строке
+        json_str = json.dumps(data_to_send).replace('"', '\\"')
+        print(f'  -d "{json_str}"')
+        
     except Exception as e:
         print(f"❌ Django сервис: Ошибка отправки результата: {str(e)[:200]}")
+        
+        # ==================== ДОБАВЛЕН ОТЛАДОЧНЫЙ КОД (Вариант 5) ====================
+        # Также пробуем альтернативные URL при других ошибках
+        print("🔄 Пробуем альтернативные URL из-за ошибки...")
+        try:
+            # Попробуем самый простой URL
+            simple_url = f"http://localhost:8080/api/pvlc-med-cards/{result['id']}/async-result"
+            print(f"   Пробуем: {simple_url}")
+            response = requests.put(simple_url, json=data_to_send, timeout=5)
+            print(f"   ✅ Успешно через localhost! Статус: {response.status_code}")
+        except Exception as e2:
+            print(f"   ❌ Не сработало: {e2}")
 # ==================== ОСНОВНЫЕ ОБРАБОТЧИКИ API ====================
 
 @api_view(['POST'])
@@ -365,7 +428,7 @@ def async_calculate_djel(request):
                 "django_service": "Асинхронный сервис расчета ДЖЕЛ",
                 "note": "Результаты будут отправлены в основной сервис автоматически",
                 "calculations_count": len(calculations_data),
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": time.strftime("%Y-%m-d %H:%M:%S"),
             },
             status=status.HTTP_200_OK
         )

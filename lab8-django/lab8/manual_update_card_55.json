@@ -1,0 +1,14 @@
+{
+  "total_result": 1.65,
+  "calculated_count": 1,
+  "async_calculated": true,
+  "async_key": "lab8key12345678",
+  "individual_results": [
+    {
+      "formula_id": 2,
+      "title": "\u0414\u0435\u0432\u043e\u0447\u043a\u0438 4-7 \u043b\u0435\u0442",
+      "individual_result": 1.65,
+      "input_height": 123
+    }
+  ]
+}
