@@ -1,6 +1,6 @@
-# Internet-Apps-Development-LAB8---INTERSERVICE-ASYNC-
+# PVLC_Calculator_Async_Service
 # Лабораторная №8
-Репозиторий по курсу "Разработка Интернет Приложений" (FRONTEND)
+Репозиторий по курсу "Разработка Интернет Приложений" (Async-Service)
 
 ## Тема курса: Определение должной жизненной емкости легких (ДЖЕЛ).
 
